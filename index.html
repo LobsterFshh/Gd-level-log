@@ -21,7 +21,22 @@
     h1 {
       text-align: center;
       color: #00e5ff;
-      margin-bottom: 24px;
+      margin-bottom: 6px;
+    }
+    #loggedInAs {
+      text-align: center;
+      font-size: 13px;
+      color: #9a9cb8;
+      margin-bottom: 20px;
+      min-height: 18px;
+    }
+    #loggedInAs a {
+      color: #ff4081;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    #loggedInAs a:hover {
+      text-decoration: underline;
     }
 
     /* ID panel */
@@ -41,6 +56,7 @@
       font-size: 22px;
       font-weight: bold;
       color: #00e5ff;
+      word-break: break-all;
     }
     .current-id span.label {
       display: block;
@@ -56,7 +72,7 @@
       gap: 8px;
     }
     .id-switch input {
-      width: 120px;
+      width: 140px;
       padding: 10px 12px;
       border: 1px solid #3d3f58;
       border-radius: 6px;
@@ -94,7 +110,11 @@
       padding: 20px;
       border-radius: 10px;
       box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-      margin-bottom: 30px;
+      margin-bottom: 20px;
+    }
+    .form-card h3 {
+      margin-top: 0;
+      color: #00e5ff;
     }
     .form-group {
       display: flex;
@@ -114,6 +134,10 @@
     input:focus {
       outline: none;
       border-color: #00e5ff;
+    }
+    input:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
     }
     button {
       padding: 12px 24px;
@@ -188,42 +212,60 @@
 
   <div class="container">
     <h1>Geometry Dash Completion Log</h1>
-
-    <div class="id-panel">
-      <div class="current-id">
-        <span class="label">Current ID</span>
-        <span id="currentIdDisplay">#----</span>
-      </div>
-      <div class="id-switch">
-        <input type="text" id="idInput" placeholder="Type an ID">
-        <button onclick="switchId()">Load ID</button>
-      </div>
-    </div>
-    <p class="notice">Anyone who enters this same ID can view and add to this log — treat it like a share code, not a password.</p>
+    <div id="loggedInAs"></div>
     <div id="statusMsg"></div>
 
-    <div class="form-card">
+    <!-- Auth screen: shown when nobody is logged in on this device -->
+    <div class="form-card" id="authCard" style="display:none;">
+      <h3>Log In or Create an Account</h3>
       <div class="form-group">
-        <input type="text" id="levelName" placeholder="Level Name (e.g. Bloodbath)" required>
-        <input type="text" id="difficulty" placeholder="Difficulty (e.g. Extreme Demon)">
-        <input type="number" id="attempts" placeholder="Attempts">
-        <button onclick="addLog()">Add Log</button>
+        <input type="text" id="authUsername" placeholder="Username">
+        <input type="password" id="authPassword" placeholder="Password">
+      </div>
+      <div class="form-group" style="margin-top:10px;">
+        <button onclick="handleLogin()">Log In</button>
+        <button onclick="handleRegister()">Register New User</button>
       </div>
     </div>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Level Name</th>
-          <th>Difficulty</th>
-          <th>Attempts</th>
-          <th>Showcase</th>
-          <th>🗑️</th>
-        </tr>
-      </thead>
-      <tbody id="logTableBody">
-        </tbody>
-    </table>
+    <!-- Main app: shown once logged in -->
+    <div id="appContent" style="display:none;">
+      <div class="id-panel">
+        <div class="current-id">
+          <span class="label">Viewing</span>
+          <span id="currentIdDisplay">-</span>
+        </div>
+        <div class="id-switch">
+          <input type="text" id="idInput" placeholder="Type a username">
+          <button onclick="switchToUsername()">View User</button>
+        </div>
+      </div>
+      <p class="notice">Anyone can look up and view any user's log by username. Only the owner, logged in, can add or delete entries in their own log.</p>
+
+      <div class="form-card">
+        <div class="form-group">
+          <input type="text" id="levelName" placeholder="Level Name (e.g. Bloodbath)" required>
+          <input type="text" id="difficulty" placeholder="Difficulty (e.g. Extreme Demon)">
+          <input type="number" id="attempts" placeholder="Attempts">
+          <button onclick="addLog()" id="addLogBtn">Add Log</button>
+        </div>
+      </div>
+      <p class="notice" id="viewOnlyNotice" style="display:none; margin-top:-10px;">🔒 Read-only — you're viewing another user's log.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Level Name</th>
+            <th>Difficulty</th>
+            <th>Attempts</th>
+            <th>Showcase</th>
+            <th>🗑️</th>
+          </tr>
+        </thead>
+        <tbody id="logTableBody">
+          </tbody>
+      </table>
+    </div>
   </div>
 
 <script type="module">
@@ -233,7 +275,6 @@
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   // ---- 1. PASTE YOUR FIREBASE CONFIG HERE ----
-  // Firebase console -> Project settings -> Your apps -> Web app -> SDK setup and config
   const firebaseConfig = {
     apiKey: "AIzaSyDpVb4uBNrf6IKfpRdt7nZe1zdLsiMBeQM",
     authDomain: "gd-level-log.firebaseapp.com",
@@ -247,7 +288,9 @@
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
-  let currentId = null;
+  let myUser = null;      // { username, id } for the person logged in on this device
+  let viewingId = null;   // ID of the log currently displayed
+  let viewingUsername = null;
   let logs = [];
 
   function setStatus(msg, isError) {
@@ -259,20 +302,73 @@
     }
   }
 
-  // ---- Sequential ID generator ----
-  // Every new visitor (no saved ID yet) gets the next number in line, starting at 0.
-  // The counter itself lives in Firestore (meta/idCounter) so it's shared across everyone,
-  // and it's a plain incrementing integer with no upper bound.
-  async function getNextId() {
+  function canEdit() {
+    return !!(myUser && viewingId === myUser.id);
+  }
+
+  // ---- Password hashing (client-side SHA-256) ----
+  async function hashPassword(password) {
+    const enc = new TextEncoder().encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', enc);
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  // ---- Account creation: enforces unique username AND unique, sequential ID ----
+  // Sequential ID counter lives in meta/idCounter and starts at 0, no upper bound.
+  // Username uniqueness is enforced by using the lowercased username as the doc ID
+  // in "usernames", combined with a transaction so two people registering the
+  // same name at the same instant can't both succeed.
+  async function registerUser(username, password) {
+    const cleanUsername = username.trim();
+    const usernameKey = cleanUsername.toLowerCase();
+    if (!usernameKey) throw new Error('EMPTY_USERNAME');
+    const passwordHash = await hashPassword(password);
+    const usernameRef = doc(db, 'usernames', usernameKey);
     const counterRef = doc(db, 'meta', 'idCounter');
-    const nextValue = await runTransaction(db, async (transaction) => {
+
+    const newId = await runTransaction(db, async (transaction) => {
+      const usernameSnap = await transaction.get(usernameRef);
+      if (usernameSnap.exists()) {
+        throw new Error('USERNAME_TAKEN');
+      }
       const counterSnap = await transaction.get(counterRef);
       const current = counterSnap.exists() ? Number(counterSnap.data().value) : -1;
       const next = current + 1;
+      const nextIdStr = String(next);
+
       transaction.set(counterRef, { value: next });
+      transaction.set(usernameRef, {
+        username: cleanUsername,
+        id: nextIdStr,
+        passwordHash
+      });
+      transaction.set(doc(db, 'logs', nextIdStr), { entries: [], username: cleanUsername });
+
       return next;
     });
-    return String(nextValue);
+
+    return { username: cleanUsername, id: String(newId) };
+  }
+
+  async function loginUser(username, password) {
+    const usernameKey = username.trim().toLowerCase();
+    if (!usernameKey) throw new Error('EMPTY_USERNAME');
+    const snap = await getDoc(doc(db, 'usernames', usernameKey));
+    if (!snap.exists()) throw new Error('NO_SUCH_USER');
+    const data = snap.data();
+    const passwordHash = await hashPassword(password);
+    if (passwordHash !== data.passwordHash) throw new Error('WRONG_PASSWORD');
+    return { username: data.username, id: data.id };
+  }
+
+  // Look up which user owns a given username's log
+  async function lookupUserByUsername(username) {
+    const usernameKey = username.trim().toLowerCase();
+    if (!usernameKey) return null;
+    const snap = await getDoc(doc(db, 'usernames', usernameKey));
+    if (!snap.exists()) return null;
+    const data = snap.data();
+    return { username: data.username, id: data.id };
   }
 
   function renderTable() {
@@ -280,13 +376,18 @@
     tbody.innerHTML = '';
 
     if (logs.length === 0) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="5">No logs yet for this ID. Add your first one above.</td></tr>`;
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="5">No logs yet for this user. Add your first one above.</td></tr>`;
       return;
     }
+
+    const editable = canEdit();
 
     logs.forEach((log, index) => {
       const searchQuery = encodeURIComponent(`${log.levelName} showcase`);
       const youtubeUrl = `https://www.youtube.com/results?search_query=${searchQuery}`;
+      const deleteCell = editable
+        ? `<button class="delete-btn" data-index="${index}">Delete</button>`
+        : '';
 
       const row = document.createElement('tr');
       row.innerHTML = `
@@ -295,20 +396,26 @@
         <td>${log.attempts}</td>
         <td><a class="showcase-link" href="${youtubeUrl}" target="_blank" rel="noopener noreferrer"> YT
         Showcase↗</a></td>
-        <td><button class="delete-btn" data-index="${index}">Delete</button></td>
+        <td>${deleteCell}</td>
       `;
       tbody.appendChild(row);
     });
 
-    // Event delegation would be cleaner, but keep it simple: rebind per row
     tbody.querySelectorAll('.delete-btn').forEach(btn => {
       btn.addEventListener('click', () => deleteLog(Number(btn.dataset.index)));
     });
   }
 
-  // ---- 2. FIRESTORE READ/WRITE (replaces window.storage) ----
-  // Each ID is a document in the "logs" collection: logs/{id} = { entries: [...] }
+  function updateEditPermissions() {
+    const editable = canEdit();
+    document.getElementById('levelName').disabled = !editable;
+    document.getElementById('difficulty').disabled = !editable;
+    document.getElementById('attempts').disabled = !editable;
+    document.getElementById('addLogBtn').disabled = !editable;
+    document.getElementById('viewOnlyNotice').style.display = editable ? 'none' : 'block';
+  }
 
+  // ---- Firestore read/write for the entries list ----
   async function loadLogsForId(id) {
     setStatus('Loading...');
     try {
@@ -318,44 +425,47 @@
     } catch (e) {
       console.error('Firestore error:', e);
       logs = [];
-      setStatus('Could not load that ID', true);
+      setStatus('Could not load that log', true);
     }
     renderTable();
   }
 
   async function saveLogsForId(id) {
     try {
-      await setDoc(doc(db, 'logs', id), { entries: logs });
+      await setDoc(doc(db, 'logs', id), { entries: logs, username: viewingUsername }, { merge: true });
     } catch (e) {
       console.error('Firestore error:', e);
       setStatus('Save failed, try again', true);
     }
   }
 
-  async function switchId() {
-    const idInput = document.getElementById('idInput');
-    const newId = idInput.value.trim();
-
-    if (newId === '') {
-      alert('Please enter an ID to load!');
+  async function switchToUsername() {
+    const input = document.getElementById('idInput');
+    const typed = input.value.trim();
+    if (typed === '') {
+      alert('Please enter a username to load!');
       return;
     }
 
-    currentId = newId;
-    document.getElementById('currentIdDisplay').textContent = '#' + currentId;
-
-    // Remember this as "my" ID on this device for next time the page is opened
-    try {
-      localStorage.setItem('myId', currentId);
-    } catch (e) {
-      console.error('localStorage error:', e);
+    setStatus('Looking up user...');
+    const found = await lookupUserByUsername(typed);
+    if (!found) {
+      setStatus('No user with that username', true);
+      return;
     }
 
-    await loadLogsForId(currentId);
-    setStatus(`Loaded ID #${currentId}`);
+    viewingId = found.id;
+    viewingUsername = found.username;
+    document.getElementById('currentIdDisplay').textContent = viewingUsername;
+
+    await loadLogsForId(viewingId);
+    updateEditPermissions();
+    setStatus(`Viewing ${viewingUsername}'s log`);
   }
 
   async function addLog() {
+    if (!canEdit()) return;
+
     const levelInput = document.getElementById('levelName');
     const diffInput = document.getElementById('difficulty');
     const attInput = document.getElementById('attempts');
@@ -371,7 +481,7 @@
 
     logs.push({ levelName, difficulty, attempts });
     renderTable();
-    await saveLogsForId(currentId);
+    await saveLogsForId(viewingId);
     setStatus('Log saved');
 
     levelInput.value = '';
@@ -380,46 +490,143 @@
   }
 
   async function deleteLog(index) {
+    if (!canEdit()) return;
     logs.splice(index, 1);
     renderTable();
-    await saveLogsForId(currentId);
+    await saveLogsForId(viewingId);
     setStatus('Log removed');
   }
 
-  async function init() {
-    setStatus('Loading your ID...');
-    let myId = null;
+  // ---- Auth screen handlers ----
+  async function handleRegister() {
+    const username = document.getElementById('authUsername').value;
+    const password = document.getElementById('authPassword').value;
+    if (!username.trim() || !password) {
+      setStatus('Enter a username and password', true);
+      return;
+    }
+    setStatus('Creating account...');
     try {
-      myId = localStorage.getItem('myId');
+      const result = await registerUser(username, password);
+      await completeLogin(result);
+      setStatus('Account created! Welcome, ' + result.username);
     } catch (e) {
-      myId = null;
-    }
-
-    if (!myId) {
-      try {
-        myId = await getNextId();
-      } catch (e) {
-        console.error('Firestore error:', e);
-        setStatus('Could not assign an ID', true);
-        return;
-      }
-      try {
-        localStorage.setItem('myId', myId);
-      } catch (e) {
-        console.error('localStorage error:', e);
+      if (e.message === 'USERNAME_TAKEN') {
+        setStatus('That username is already taken', true);
+      } else {
+        console.error(e);
+        setStatus('Could not create account', true);
       }
     }
+  }
 
-    currentId = myId;
-    document.getElementById('currentIdDisplay').textContent = '#' + currentId;
-    document.getElementById('idInput').value = currentId;
+  async function handleLogin() {
+    const username = document.getElementById('authUsername').value;
+    const password = document.getElementById('authPassword').value;
+    if (!username.trim() || !password) {
+      setStatus('Enter a username and password', true);
+      return;
+    }
+    setStatus('Logging in...');
+    try {
+      const result = await loginUser(username, password);
+      await completeLogin(result);
+      setStatus('Welcome back, ' + result.username);
+    } catch (e) {
+      if (e.message === 'NO_SUCH_USER') {
+        setStatus('No account with that username — try Register', true);
+      } else if (e.message === 'WRONG_PASSWORD') {
+        setStatus('Incorrect password', true);
+      } else {
+        console.error(e);
+        setStatus('Could not log in', true);
+      }
+    }
+  }
 
-    await loadLogsForId(currentId);
-    setStatus('');
+  function renderLoggedInAs() {
+    const el = document.getElementById('loggedInAs');
+    if (myUser) {
+      el.innerHTML = `Logged in as <strong>${myUser.username}</strong> &middot; <a href="#" id="logoutLink">Log out</a>`;
+      document.getElementById('logoutLink').addEventListener('click', (e) => {
+        e.preventDefault();
+        logout();
+      });
+    } else {
+      el.innerHTML = '';
+    }
+  }
+
+  async function completeLogin(user) {
+    myUser = user;
+    try {
+      localStorage.setItem('myUser', JSON.stringify(user));
+    } catch (e) {
+      console.error('localStorage error:', e);
+    }
+
+    document.getElementById('authUsername').value = '';
+    document.getElementById('authPassword').value = '';
+    document.getElementById('authCard').style.display = 'none';
+    document.getElementById('appContent').style.display = 'block';
+    renderLoggedInAs();
+
+    viewingId = myUser.id;
+    viewingUsername = myUser.username;
+    document.getElementById('currentIdDisplay').textContent = viewingUsername;
+    document.getElementById('idInput').value = '';
+
+    await loadLogsForId(viewingId);
+    updateEditPermissions();
+  }
+
+  function logout() {
+    myUser = null;
+    viewingId = null;
+    viewingUsername = null;
+    logs = [];
+    try {
+      localStorage.removeItem('myUser');
+    } catch (e) {
+      console.error('localStorage error:', e);
+    }
+    document.getElementById('appContent').style.display = 'none';
+    document.getElementById('authCard').style.display = 'block';
+    renderLoggedInAs();
+    setStatus('Logged out');
+  }
+
+  async function init() {
+    let saved = null;
+    try {
+      const raw = localStorage.getItem('myUser');
+      saved = raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      saved = null;
+    }
+
+    if (saved && saved.username && saved.id) {
+      myUser = saved;
+      document.getElementById('authCard').style.display = 'none';
+      document.getElementById('appContent').style.display = 'block';
+      renderLoggedInAs();
+
+      viewingId = myUser.id;
+      viewingUsername = myUser.username;
+      document.getElementById('currentIdDisplay').textContent = viewingUsername;
+
+      await loadLogsForId(viewingId);
+      updateEditPermissions();
+    } else {
+      document.getElementById('authCard').style.display = 'block';
+      document.getElementById('appContent').style.display = 'none';
+    }
   }
 
   // expose the functions the inline HTML onclick handlers need
-  window.switchId = switchId;
+  window.handleLogin = handleLogin;
+  window.handleRegister = handleRegister;
+  window.switchToUsername = switchToUsername;
   window.addLog = addLog;
 
   init();
