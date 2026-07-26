@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GD Completion Log</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: #1a1a24;
+      color: #ffffff;
+      padding: 40px 20px;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 800px;
+    }
+    h1 {
+      text-align: center;
+      color: #00e5ff;
+      margin-bottom: 24px;
+    }
+
+    /* ID panel */
+    .id-panel {
+      background: #252636;
+      padding: 16px 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .current-id {
+      font-size: 22px;
+      font-weight: bold;
+      color: #00e5ff;
+    }
+    .current-id span.label {
+      display: block;
+      font-size: 11px;
+      font-weight: normal;
+      color: #9a9cb8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+    .id-switch {
+      display: flex;
+      gap: 8px;
+    }
+    .id-switch input {
+      width: 120px;
+      padding: 10px 12px;
+      border: 1px solid #3d3f58;
+      border-radius: 6px;
+      background: #1a1a24;
+      color: #fff;
+      font-size: 14px;
+    }
+    .id-switch input:focus {
+      outline: none;
+      border-color: #00e5ff;
+    }
+    .id-switch button {
+      padding: 10px 18px;
+      background-color: #3d3f58;
+      color: #fff;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+      font-size: 13px;
+    }
+    .id-switch button:hover {
+      background-color: #4d4f6e;
+    }
+    .notice {
+      font-size: 12px;
+      color: #9a9cb8;
+      margin: -10px 0 20px 0;
+      text-align: center;
+    }
+
+    .form-card {
+      background: #252636;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      margin-bottom: 30px;
+    }
+    .form-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    input {
+      flex: 1;
+      min-width: 150px;
+      padding: 12px;
+      border: 1px solid #3d3f58;
+      border-radius: 6px;
+      background: #1a1a24;
+      color: #fff;
+      font-size: 14px;
+    }
+    input:focus {
+      outline: none;
+      border-color: #00e5ff;
+    }
+    button {
+      padding: 12px 24px;
+      background-color: #00e5ff;
+      color: #1a1a24;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background-color: #00b3cc;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #252636;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    th, td {
+      padding: 14px;
+      text-align: left;
+      border-bottom: 1px solid #3d3f58;
+    }
+    th {
+      background-color: #1f202e;
+      color: #00e5ff;
+    }
+    tr:last-child td {
+      border-bottom: none;
+    }
+    .empty-row td {
+      text-align: center;
+      color: #6b6d8a;
+      padding: 24px;
+    }
+    a.showcase-link {
+      color: #ff4081;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    a.showcase-link:hover {
+      text-decoration: underline;
+    }
+    .delete-btn {
+      background: #ff5252;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .delete-btn:hover {
+      background: #d32f2f;
+    }
+    #statusMsg {
+      text-align: center;
+      font-size: 12px;
+      color: #9a9cb8;
+      min-height: 16px;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>Geometry Dash Completion Log</h1>
+
+    <div class="id-panel">
+      <div class="current-id">
+        <span class="label">Current ID</span>
+        <span id="currentIdDisplay">#----</span>
+      </div>
+      <div class="id-switch">
+        <input type="text" id="idInput" placeholder="Type an ID">
+        <button onclick="switchId()">Load ID</button>
+      </div>
+    </div>
+    <p class="notice">Anyone who enters this same ID can view and add to this log — treat it like a share code, not a password.</p>
+    <div id="statusMsg"></div>
+
+    <div class="form-card">
+      <div class="form-group">
+        <input type="text" id="levelName" placeholder="Level Name (e.g. Bloodbath)" required>
+        <input type="text" id="difficulty" placeholder="Difficulty (e.g. Extreme Demon)">
+        <input type="number" id="attempts" placeholder="Attempts">
+        <button onclick="addLog()">Add Log</button>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Level Name</th>
+          <th>Difficulty</th>
+          <th>Attempts</th>
+          <th>Showcase</th>
+          <th>🗑️</th>
+        </tr>
+      </thead>
+      <tbody id="logTableBody">
+        </tbody>
+    </table>
+  </div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import {
+    getFirestore, doc, getDoc, setDoc
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  // ---- 1. PASTE YOUR FIREBASE CONFIG HERE ----
+  // Firebase console -> Project settings -> Your apps -> Web app -> SDK setup and config
+  const firebaseConfig = {
+    apiKey: "AIzaSyDpVb4uBNrf6IKfpRdt7nZe1zdLsiMBeQM",
+    authDomain: "gd-level-log.firebaseapp.com",
+    projectId: "gd-level-log",
+    storageBucket: "gd-level-log.firebasestorage.app",
+    messagingSenderId: "846562077323",
+    appId: "1:846562077323:web:7c65e9ea4fdbcd4534828e",
+    measurementId: "G-CLVQXN3ZS1"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  let currentId = null;
+  let logs = [];
+
+  function setStatus(msg, isError) {
+    const el = document.getElementById('statusMsg');
+    el.textContent = msg;
+    el.style.color = isError ? '#ff5252' : '#9a9cb8';
+    if (msg) {
+      setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 2500);
+    }
+  }
+
+  function randomId() {
+    return String(Math.floor(1000 + Math.random() * 9000));
+  }
+
+  function renderTable() {
+    const tbody = document.getElementById('logTableBody');
+    tbody.innerHTML = '';
+
+    if (logs.length === 0) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="5">No logs yet for this ID. Add your first one above.</td></tr>`;
+      return;
+    }
+
+    logs.forEach((log, index) => {
+      const searchQuery = encodeURIComponent(`${log.levelName} showcase`);
+      const youtubeUrl = `https://www.youtube.com/results?search_query=${searchQuery}`;
+
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><strong>${log.levelName}</strong></td>
+        <td>${log.difficulty}</td>
+        <td>${log.attempts}</td>
+        <td><a class="showcase-link" href="${youtubeUrl}" target="_blank" rel="noopener noreferrer"> YT
+        Showcase↗</a></td>
+        <td><button class="delete-btn" data-index="${index}">Delete</button></td>
+      `;
+      tbody.appendChild(row);
+    });
+
+    // Event delegation would be cleaner, but keep it simple: rebind per row
+    tbody.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => deleteLog(Number(btn.dataset.index)));
+    });
+  }
+
+  // ---- 2. FIRESTORE READ/WRITE (replaces window.storage) ----
+  // Each ID is a document in the "logs" collection: logs/{id} = { entries: [...] }
+
+  async function loadLogsForId(id) {
+    setStatus('Loading...');
+    try {
+      const snap = await getDoc(doc(db, 'logs', id));
+      logs = snap.exists() ? (snap.data().entries || []) : [];
+      setStatus('');
+    } catch (e) {
+      console.error('Firestore error:', e);
+      logs = [];
+      setStatus('Could not load that ID', true);
+    }
+    renderTable();
+  }
+
+  async function saveLogsForId(id) {
+    try {
+      await setDoc(doc(db, 'logs', id), { entries: logs });
+    } catch (e) {
+      console.error('Firestore error:', e);
+      setStatus('Save failed, try again', true);
+    }
+  }
+
+  async function switchId() {
+    const idInput = document.getElementById('idInput');
+    const newId = idInput.value.trim();
+
+    if (newId === '') {
+      alert('Please enter an ID to load!');
+      return;
+    }
+
+    currentId = newId;
+    document.getElementById('currentIdDisplay').textContent = '#' + currentId;
+
+    // Remember this as "my" ID on this device for next time the page is opened
+    try {
+      localStorage.setItem('myId', currentId);
+    } catch (e) {
+      console.error('localStorage error:', e);
+    }
+
+    await loadLogsForId(currentId);
+    setStatus(`Loaded ID #${currentId}`);
+  }
+
+  async function addLog() {
+    const levelInput = document.getElementById('levelName');
+    const diffInput = document.getElementById('difficulty');
+    const attInput = document.getElementById('attempts');
+
+    const levelName = levelInput.value.trim();
+    const difficulty = diffInput.value.trim() || 'N/A';
+    const attempts = attInput.value.trim() || 'N/A';
+
+    if (levelName === '') {
+      alert('Please enter a level name!');
+      return;
+    }
+
+    logs.push({ levelName, difficulty, attempts });
+    renderTable();
+    await saveLogsForId(currentId);
+    setStatus('Log saved');
+
+    levelInput.value = '';
+    diffInput.value = '';
+    attInput.value = '';
+  }
+
+  async function deleteLog(index) {
+    logs.splice(index, 1);
+    renderTable();
+    await saveLogsForId(currentId);
+    setStatus('Log removed');
+  }
+
+  async function init() {
+    setStatus('Loading your ID...');
+    let myId = null;
+    try {
+      myId = localStorage.getItem('myId');
+    } catch (e) {
+      myId = null;
+    }
+
+    if (!myId) {
+      myId = randomId();
+      try {
+        localStorage.setItem('myId', myId);
+      } catch (e) {
+        console.error('localStorage error:', e);
+      }
+    }
+
+    currentId = myId;
+    document.getElementById('currentIdDisplay').textContent = '#' + currentId;
+    document.getElementById('idInput').value = currentId;
+
+    await loadLogsForId(currentId);
+    setStatus('');
+  }
+
+  // expose the functions the inline HTML onclick handlers need
+  window.switchId = switchId;
+  window.addLog = addLog;
+
+  init();
+</script>
+
+</body>
+</html>
