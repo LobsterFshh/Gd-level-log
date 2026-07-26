@@ -234,10 +234,11 @@
         <div class="current-id">
           <span class="label">Viewing</span>
           <span id="currentIdDisplay">-</span>
+          <span id="currentIdSub" style="display:block; font-size:11px; font-weight:normal; color:#6b6d8a; margin-top:2px;">ID: -</span>
         </div>
         <div class="id-switch">
-          <input type="text" id="idInput" placeholder="Type a username">
-          <button onclick="switchToUsername()">View User</button>
+          <input type="text" id="idInput" placeholder="Username or ID">
+          <button onclick="switchToUser()">Search</button>
         </div>
       </div>
       <p class="notice">Anyone can look up and view any user's log by username. Only the owner, logged in, can add or delete entries in their own log.</p>
@@ -304,6 +305,22 @@
 
   function canEdit() {
     return !!(myUser && viewingId === myUser.id);
+  }
+
+  // ---- Character restrictions for usernames/passwords ----
+  // Blocks: [ ] { } " ' < > : ;
+  const FORBIDDEN_CHARS = /[[\]{}"'<>:;]/;
+
+  function stripForbiddenChars(value) {
+    return value.replace(/[[\]{}"'<>:;]/g, '');
+  }
+
+  function attachCharFilter(elementId) {
+    const el = document.getElementById(elementId);
+    el.addEventListener('input', () => {
+      const cleaned = stripForbiddenChars(el.value);
+      if (cleaned !== el.value) el.value = cleaned;
+    });
   }
 
   // ---- Password hashing (client-side SHA-256) ----
@@ -439,24 +456,51 @@
     }
   }
 
-  async function switchToUsername() {
+  function updateViewingDisplay(username, id) {
+    document.getElementById('currentIdDisplay').textContent = username;
+    document.getElementById('currentIdSub').textContent = 'ID: ' + id;
+  }
+
+  // Look up which user owns a given ID's log, by ID
+  async function lookupUserById(id) {
+    const snap = await getDoc(doc(db, 'logs', id));
+    if (!snap.exists() || !snap.data().username) return null;
+    return { username: snap.data().username, id };
+  }
+
+  async function revertToOwnLog() {
+    if (!myUser) return;
+    viewingId = myUser.id;
+    viewingUsername = myUser.username;
+    updateViewingDisplay(viewingUsername, viewingId);
+    document.getElementById('idInput').value = '';
+    await loadLogsForId(viewingId);
+    updateEditPermissions();
+  }
+
+  async function switchToUser() {
     const input = document.getElementById('idInput');
     const typed = input.value.trim();
     if (typed === '') {
-      alert('Please enter a username to load!');
+      alert('Please enter a username or ID to load!');
       return;
     }
 
     setStatus('Looking up user...');
-    const found = await lookupUserByUsername(typed);
+    // Pure digits -> treat as an ID lookup, otherwise treat as a username lookup
+    const found = /^\d+$/.test(typed)
+      ? await lookupUserById(typed)
+      : await lookupUserByUsername(typed);
+
     if (!found) {
-      setStatus('No user with that username', true);
+      setStatus('No user name found', true);
+      setTimeout(revertToOwnLog, 1000);
       return;
     }
 
     viewingId = found.id;
     viewingUsername = found.username;
-    document.getElementById('currentIdDisplay').textContent = viewingUsername;
+    updateViewingDisplay(viewingUsername, viewingId);
 
     await loadLogsForId(viewingId);
     updateEditPermissions();
@@ -505,6 +549,10 @@
       setStatus('Enter a username and password', true);
       return;
     }
+    if (FORBIDDEN_CHARS.test(username) || FORBIDDEN_CHARS.test(password)) {
+      setStatus('Username/password can\'t contain [ ] { } " \' < > : ;', true);
+      return;
+    }
     setStatus('Creating account...');
     try {
       const result = await registerUser(username, password);
@@ -525,6 +573,10 @@
     const password = document.getElementById('authPassword').value;
     if (!username.trim() || !password) {
       setStatus('Enter a username and password', true);
+      return;
+    }
+    if (FORBIDDEN_CHARS.test(username) || FORBIDDEN_CHARS.test(password)) {
+      setStatus('Username/password can\'t contain [ ] { } " \' < > : ;', true);
       return;
     }
     setStatus('Logging in...');
@@ -573,7 +625,7 @@
 
     viewingId = myUser.id;
     viewingUsername = myUser.username;
-    document.getElementById('currentIdDisplay').textContent = viewingUsername;
+    updateViewingDisplay(viewingUsername, viewingId);
     document.getElementById('idInput').value = '';
 
     await loadLogsForId(viewingId);
@@ -613,7 +665,7 @@
 
       viewingId = myUser.id;
       viewingUsername = myUser.username;
-      document.getElementById('currentIdDisplay').textContent = viewingUsername;
+      updateViewingDisplay(viewingUsername, viewingId);
 
       await loadLogsForId(viewingId);
       updateEditPermissions();
@@ -626,8 +678,11 @@
   // expose the functions the inline HTML onclick handlers need
   window.handleLogin = handleLogin;
   window.handleRegister = handleRegister;
-  window.switchToUsername = switchToUsername;
+  window.switchToUser = switchToUser;
   window.addLog = addLog;
+
+  attachCharFilter('authUsername');
+  attachCharFilter('authPassword');
 
   init();
 </script>
