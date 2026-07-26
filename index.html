@@ -229,7 +229,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
-    getFirestore, doc, getDoc, setDoc
+    getFirestore, doc, getDoc, setDoc, runTransaction
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   // ---- 1. PASTE YOUR FIREBASE CONFIG HERE ----
@@ -259,8 +259,20 @@
     }
   }
 
-  function randomId() {
-    return String(Math.floor(1000 + Math.random() * 9000));
+  // ---- Sequential ID generator ----
+  // Every new visitor (no saved ID yet) gets the next number in line, starting at 0.
+  // The counter itself lives in Firestore (meta/idCounter) so it's shared across everyone,
+  // and it's a plain incrementing integer with no upper bound.
+  async function getNextId() {
+    const counterRef = doc(db, 'meta', 'idCounter');
+    const nextValue = await runTransaction(db, async (transaction) => {
+      const counterSnap = await transaction.get(counterRef);
+      const current = counterSnap.exists() ? Number(counterSnap.data().value) : -1;
+      const next = current + 1;
+      transaction.set(counterRef, { value: next });
+      return next;
+    });
+    return String(nextValue);
   }
 
   function renderTable() {
@@ -384,7 +396,13 @@
     }
 
     if (!myId) {
-      myId = randomId();
+      try {
+        myId = await getNextId();
+      } catch (e) {
+        console.error('Firestore error:', e);
+        setStatus('Could not assign an ID', true);
+        return;
+      }
       try {
         localStorage.setItem('myId', myId);
       } catch (e) {
