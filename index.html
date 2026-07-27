@@ -139,6 +139,22 @@
       opacity: 0.4;
       cursor: not-allowed;
     }
+    select {
+      padding: 12px;
+      border: 1px solid #3d3f58;
+      border-radius: 6px;
+      background: #1a1a24;
+      color: #fff;
+      font-size: 14px;
+    }
+    select:focus {
+      outline: none;
+      border-color: #00e5ff;
+    }
+    select:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
     button {
       padding: 12px 24px;
       background-color: #00e5ff;
@@ -213,6 +229,11 @@
   <div class="container">
     <h1>Geometry Dash Completion Log</h1>
     <div id="loggedInAs"></div>
+    <div id="changeUsernameForm" style="display:none; text-align:center; margin-bottom:16px;">
+      <input type="text" id="newUsernameInput" placeholder="New username" style="width:180px;">
+      <button onclick="submitUsernameChange()">Save</button>
+      <button onclick="cancelUsernameChange()">Cancel</button>
+    </div>
     <div id="statusMsg"></div>
 
     <!-- Auth screen: shown when nobody is logged in on this device -->
@@ -246,12 +267,33 @@
       <div class="form-card">
         <div class="form-group">
           <input type="text" id="levelName" placeholder="Level Name (e.g. Bloodbath)" required>
-          <input type="text" id="difficulty" placeholder="Difficulty (e.g. Extreme Demon)">
+          <select id="difficulty">
+            <option value="" disabled selected>Select Difficulty</option>
+            <option value="Easy">Easy</option>
+            <option value="Normal">Normal</option>
+            <option value="Hard">Hard</option>
+            <option value="Harder">Harder</option>
+            <option value="Insane">Insane</option>
+            <option value="Easy Demon">Easy Demon</option>
+            <option value="Medium Demon">Medium Demon</option>
+            <option value="Hard Demon">Hard Demon</option>
+            <option value="Insane Demon">Insane Demon</option>
+            <option value="Extreme Demon">Extreme Demon</option>
+          </select>
           <input type="number" id="attempts" placeholder="Attempts">
           <button onclick="addLog()" id="addLogBtn">Add Log</button>
         </div>
       </div>
       <p class="notice" id="viewOnlyNotice" style="display:none; margin-top:-10px;">🔒 Read-only — you're viewing another user's log.</p>
+
+      <div style="display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-bottom:10px;">
+        <label for="sortSelect" style="font-size:12px; color:#9a9cb8;">Sort:</label>
+        <select id="sortSelect" onchange="handleSortChange()" style="min-width:200px;">
+          <option value="none">Order Added</option>
+          <option value="asc">Difficulty: Easy → Extreme</option>
+          <option value="desc">Difficulty: Extreme → Easy</option>
+        </select>
+      </div>
 
       <table>
         <thead>
@@ -388,6 +430,54 @@
     return { username: data.username, id: data.id };
   }
 
+  // Fixed difficulty tier order, easiest to hardest
+  const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'harder', 'insane', 'easy demon', 'medium demon', 'hard demon', 'insane demon', 'extreme demon'];
+  let sortMode = 'none'; // 'none' | 'asc' | 'desc'
+
+  function difficultyRank(difficulty) {
+    const idx = DIFFICULTY_ORDER.indexOf((difficulty || '').toLowerCase());
+    return idx === -1 ? DIFFICULTY_ORDER.length : idx;
+  }
+
+  function handleSortChange() {
+    sortMode = document.getElementById('sortSelect').value;
+    renderTable();
+  }
+
+  // ---- AREDL placement lookup ----
+  // NOTE: AREDL's public docs page is a JS app I couldn't fully inspect, so
+  // this endpoint/response parsing is a best-effort guess at their REST
+  // shape. If placements come back wrong, this is the one spot to fix —
+  // check the Network tab on aredl.net while searching a level, then adjust
+  // the URL/field names below.
+  const AREDL_API_BASE = 'https://api.aredl.net/v2';
+
+  async function fetchAredlPlacement(levelName) {
+    const url = `${AREDL_API_BASE}/api/levels?name=${encodeURIComponent(levelName)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('AREDL request failed: ' + res.status);
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : (data.data || data.levels || data.results || []);
+    if (!list || !list.length) return null;
+    const match = list.find(lvl => (lvl.name || '').toLowerCase() === levelName.toLowerCase()) || list[0];
+    return match.placement ?? match.position ?? match.rank ?? null;
+  }
+
+  // Fetches the live AREDL placement for one row and patches just that cell,
+  // so the number shown is always current without blocking the table render.
+  async function updateAredlPlacement(rowIndex, levelName) {
+    const cell = document.getElementById(`diff-cell-${rowIndex}`);
+    if (!cell) return;
+    try {
+      const placement = await fetchAredlPlacement(levelName);
+      if (!document.body.contains(cell)) return;
+      cell.textContent = placement ? `AREDL #${placement}` : 'Extreme Demon — not on AREDL';
+    } catch (e) {
+      console.error('AREDL lookup failed:', e);
+      if (document.body.contains(cell)) cell.textContent = 'Extreme Demon (AREDL lookup failed)';
+    }
+  }
+
   function renderTable() {
     const tbody = document.getElementById('logTableBody');
     tbody.innerHTML = '';
@@ -399,27 +489,52 @@
 
     const editable = canEdit();
 
-    logs.forEach((log, index) => {
+    // Sort by difficulty tier for display only — data order in Firestore is untouched
+    const order = logs.map((_, i) => i);
+    if (sortMode !== 'none') {
+      order.sort((a, b) => {
+        const diff = difficultyRank(logs[a].difficulty) - difficultyRank(logs[b].difficulty);
+        return sortMode === 'asc' ? diff : -diff;
+      });
+    }
+
+    const extremeDemonRows = [];
+
+    order.forEach((index) => {
+      const log = logs[index];
       const searchQuery = encodeURIComponent(`${log.levelName} showcase`);
       const youtubeUrl = `https://www.youtube.com/results?search_query=${searchQuery}`;
       const deleteCell = editable
         ? `<button class="delete-btn" data-index="${index}">Delete</button>`
         : '';
+      const isExtremeDemon = (log.difficulty || '').toLowerCase() === 'extreme demon';
+      const difficultyCell = isExtremeDemon
+        ? `<span id="diff-cell-${index}">Checking AREDL…</span>`
+        : log.difficulty;
 
       const row = document.createElement('tr');
       row.innerHTML = `
         <td><strong>${log.levelName}</strong></td>
-        <td>${log.difficulty}</td>
+        <td>${difficultyCell}</td>
         <td>${log.attempts}</td>
         <td><a class="showcase-link" href="${youtubeUrl}" target="_blank" rel="noopener noreferrer"> YT
         Showcase↗</a></td>
         <td>${deleteCell}</td>
       `;
       tbody.appendChild(row);
+
+      if (isExtremeDemon) {
+        extremeDemonRows.push({ index, levelName: log.levelName });
+      }
     });
 
     tbody.querySelectorAll('.delete-btn').forEach(btn => {
       btn.addEventListener('click', () => deleteLog(Number(btn.dataset.index)));
+    });
+
+    // Fetch each Extreme Demon's live AREDL placement without blocking the render
+    extremeDemonRows.forEach(({ index, levelName }) => {
+      updateAredlPlacement(index, levelName);
     });
   }
 
@@ -515,11 +630,15 @@
     const attInput = document.getElementById('attempts');
 
     const levelName = levelInput.value.trim();
-    const difficulty = diffInput.value.trim() || 'N/A';
+    const difficulty = diffInput.value;
     const attempts = attInput.value.trim() || 'N/A';
 
     if (levelName === '') {
       alert('Please enter a level name!');
+      return;
+    }
+    if (difficulty === '') {
+      alert('Please select a difficulty!');
       return;
     }
 
@@ -599,15 +718,101 @@
   function renderLoggedInAs() {
     const el = document.getElementById('loggedInAs');
     if (myUser) {
-      el.innerHTML = `Logged in as <strong>${myUser.username}</strong> &middot; <a href="#" id="logoutLink">Log out</a>`;
+      el.innerHTML = `Logged in as <strong>${myUser.username}</strong> &middot; <a href="#" id="changeUsernameLink">Change Username</a> &middot; <a href="#" id="logoutLink">Log out</a>`;
+      document.getElementById('changeUsernameLink').addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleChangeUsernameForm(true);
+      });
       document.getElementById('logoutLink').addEventListener('click', (e) => {
         e.preventDefault();
         logout();
       });
     } else {
       el.innerHTML = '';
+      toggleChangeUsernameForm(false);
     }
   }
+
+  function toggleChangeUsernameForm(show) {
+    document.getElementById('changeUsernameForm').style.display = show ? 'inline-block' : 'none';
+    if (show) document.getElementById('newUsernameInput').value = '';
+  }
+
+  function cancelUsernameChange() {
+    toggleChangeUsernameForm(false);
+  }
+
+  // Renames a user's account: moves the usernames/{key} doc to the new key,
+  // keeps the same ID and password, and updates the denormalized username on
+  // their logs doc. All done in one transaction so it can't collide with
+  // someone else registering the new name at the same time.
+  async function changeUsername(newUsername) {
+    const oldKey = myUser.username.toLowerCase();
+    const newKey = newUsername.toLowerCase();
+    const oldRef = doc(db, 'usernames', oldKey);
+    const newRef = doc(db, 'usernames', newKey);
+    const logRef = doc(db, 'logs', myUser.id);
+
+    await runTransaction(db, async (transaction) => {
+      const newSnap = await transaction.get(newRef);
+      if (newSnap.exists()) {
+        throw new Error('USERNAME_TAKEN');
+      }
+      const oldSnap = await transaction.get(oldRef);
+      const oldData = oldSnap.exists() ? oldSnap.data() : { passwordHash: null };
+
+      transaction.set(newRef, {
+        username: newUsername,
+        id: myUser.id,
+        passwordHash: oldData.passwordHash
+      });
+      transaction.delete(oldRef);
+      transaction.set(logRef, { username: newUsername }, { merge: true });
+    });
+
+    myUser.username = newUsername;
+    try {
+      localStorage.setItem('myUser', JSON.stringify(myUser));
+    } catch (e) {
+      console.error('localStorage error:', e);
+    }
+    renderLoggedInAs();
+    if (viewingId === myUser.id) {
+      viewingUsername = newUsername;
+      updateViewingDisplay(viewingUsername, viewingId);
+    }
+  }
+
+  async function submitUsernameChange() {
+    const raw = document.getElementById('newUsernameInput').value;
+    const cleanNew = raw.trim();
+    if (!cleanNew) {
+      setStatus('Enter a new username', true);
+      return;
+    }
+    if (FORBIDDEN_CHARS.test(cleanNew)) {
+      setStatus('Username can\'t contain [ ] { } " \' < > : ;', true);
+      return;
+    }
+    if (cleanNew.toLowerCase() === myUser.username.toLowerCase()) {
+      setStatus('That\'s already your username', true);
+      return;
+    }
+    setStatus('Updating username...');
+    try {
+      await changeUsername(cleanNew);
+      toggleChangeUsernameForm(false);
+      setStatus('Username updated!');
+    } catch (e) {
+      if (e.message === 'USERNAME_TAKEN') {
+        setStatus('That username is already taken', true);
+      } else {
+        console.error(e);
+        setStatus('Could not update username', true);
+      }
+    }
+  }
+
 
   async function completeLogin(user) {
     myUser = user;
@@ -680,6 +885,9 @@
   window.handleRegister = handleRegister;
   window.switchToUser = switchToUser;
   window.addLog = addLog;
+  window.handleSortChange = handleSortChange;
+  window.submitUsernameChange = submitUsernameChange;
+  window.cancelUsernameChange = cancelUsernameChange;
 
   attachCharFilter('authUsername');
   attachCharFilter('authPassword');
