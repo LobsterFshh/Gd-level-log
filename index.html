@@ -205,8 +205,9 @@
     }
     .diff-face {
       display: block;
-      width: 44px;
-      height: auto;
+      height: 44px;
+      width: auto;
+      max-width: 60px;
     }
     .aredl-note {
       font-size: 11px;
@@ -619,22 +620,51 @@
   }
 
   // ---- AREDL placement lookup ----
-  // NOTE: AREDL's public docs page is a JS app I couldn't fully inspect, so
-  // this endpoint/response parsing is a best-effort guess at their REST
-  // shape. If placements come back wrong, this is the one spot to fix —
-  // check the Network tab on aredl.net while searching a level, then adjust
-  // the URL/field names below.
-  const AREDL_API_BASE = 'https://api.aredl.net/v2';
+  // Confirmed live endpoint (verified directly, not guessed): a single GET
+  // returns the ENTIRE demon list as a flat JSON array — no wrapper object,
+  // no pagination. Each entry looks like:
+  //   { "id": "...", "name": "HyperSonic", "position": 1308, ... }
+  // "position" is the list rank (1 = current hardest). exclude_legacy=false
+  // includes levels that have since been moved to the legacy list, which we
+  // want since a user's own log may reference an older placement.
+  //
+  // Because the whole list comes back in one shot, we fetch + cache it once
+  // per page load rather than re-requesting per level. Level name matching
+  // is case-insensitive and trims whitespace, since GD level names are
+  // sometimes copied with stray spaces (see e.g. "Slaughterhouse " in the
+  // real dataset).
+  const AREDL_LEVELS_URL = 'https://api.aredl.net/v2/api/aredl/levels?exclude_legacy=false';
+
+  let aredlListCache = null;   // Array of {name, position, ...} once loaded
+  let aredlListPromise = null; // in-flight fetch, so concurrent lookups share one request
+
+  async function getAredlList() {
+    if (aredlListCache) return aredlListCache;
+    if (!aredlListPromise) {
+      aredlListPromise = fetch(AREDL_LEVELS_URL)
+        .then(res => {
+          if (!res.ok) throw new Error(`AREDL API returned ${res.status}`);
+          return res.json();
+        })
+        .then(data => {
+          aredlListCache = Array.isArray(data) ? data : [];
+          return aredlListCache;
+        })
+        .catch(e => {
+          aredlListPromise = null; // allow retrying on next call if this attempt failed
+          throw e;
+        });
+    }
+    return aredlListPromise;
+  }
 
   async function fetchAredlPlacement(levelName) {
-    const url = `${AREDL_API_BASE}/api/levels?name=${encodeURIComponent(levelName)}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('AREDL request failed: ' + res.status);
-    const data = await res.json();
-    const list = Array.isArray(data) ? data : (data.data || data.levels || data.results || []);
-    if (!list || !list.length) return null;
-    const match = list.find(lvl => (lvl.name || '').toLowerCase() === levelName.toLowerCase()) || list[0];
-    return match.placement ?? match.position ?? match.rank ?? null;
+    const target = levelName.trim().toLowerCase();
+    const list = await getAredlList();
+    if (!list.length) return null;
+
+    const match = list.find(lvl => (lvl.name || '').trim().toLowerCase() === target);
+    return match ? match.position : null;
   }
 
   // Fetches the live AREDL placement for one row and patches just that cell,
