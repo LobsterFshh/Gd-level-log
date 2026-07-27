@@ -222,6 +222,83 @@
       min-height: 16px;
       margin-bottom: 10px;
     }
+
+    .friend-icon-btn {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #252636;
+      border: 2px solid #3d3f58;
+      color: #00e5ff;
+      font-size: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      z-index: 900;
+      padding: 0;
+    }
+    .friend-icon-btn:hover {
+      background: #2f3145;
+    }
+
+    #friendPanelOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      z-index: 1000;
+      overflow-y: auto;
+    }
+    #friendPanel {
+      background: #252636;
+      max-width: 720px;
+      margin: 40px auto;
+      padding: 24px;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    #friendPanel h2 {
+      color: #00e5ff;
+      margin: 0;
+    }
+    #friendPanel h3 {
+      color: #00e5ff;
+      font-size: 15px;
+      margin: 24px 0 10px 0;
+    }
+    .friend-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .friend-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #1a1a24;
+      border: 1px solid #3d3f58;
+      border-radius: 20px;
+      padding: 6px 10px;
+      margin: 4px 4px 4px 0;
+      font-size: 13px;
+    }
+    .chip-remove {
+      background: none;
+      border: none;
+      color: #ff5252;
+      cursor: pointer;
+      font-size: 15px;
+      padding: 0 2px;
+      font-weight: bold;
+    }
+    .chip-remove:hover {
+      color: #ff0000;
+    }
   </style>
 </head>
 <body>
@@ -251,6 +328,53 @@
 
     <!-- Main app: shown once logged in -->
     <div id="appContent" style="display:none;">
+      <button class="friend-icon-btn" onclick="toggleFriendPanel()" title="Friends">👥</button>
+
+      <div id="friendPanelOverlay" onclick="closeFriendPanelOnOverlay(event)">
+        <div id="friendPanel">
+          <div class="friend-panel-header">
+            <h2>Friends</h2>
+            <button onclick="toggleFriendPanel()">✕ Close</button>
+          </div>
+          <p class="notice" style="margin-top:10px;">Only you and the friends you add can see a group's combined list.</p>
+
+          <h3>Your Friends (<span id="friendCount">0</span>/4)</h3>
+          <div id="friendChips"></div>
+          <div class="form-group" style="margin-top:10px;">
+            <input type="text" id="friendInput" placeholder="Username or ID">
+            <button onclick="addFriend()">Add Friend</button>
+          </div>
+
+          <h3>Combined List</h3>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+            <select id="combinedGroupSelect" onchange="handleGroupSelectChange()" style="min-width:180px;">
+              <option value="mine">My Group</option>
+            </select>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <label for="combinedSortSelect" style="font-size:12px; color:#9a9cb8;">Sort:</label>
+              <select id="combinedSortSelect" onchange="renderCombinedTable()" style="min-width:200px;">
+                <option value="none">Order</option>
+                <option value="asc">Difficulty: Easy → Extreme</option>
+                <option value="desc">Difficulty: Extreme → Easy</option>
+              </select>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Level Name</th>
+                <th>Difficulty</th>
+                <th>Attempts</th>
+                <th>Beaten By</th>
+                <th>Showcase</th>
+              </tr>
+            </thead>
+            <tbody id="combinedTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="id-panel">
         <div class="current-id">
           <span class="label">Viewing</span>
@@ -314,7 +438,8 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
-    getFirestore, doc, getDoc, setDoc, runTransaction
+    getFirestore, doc, getDoc, setDoc, runTransaction,
+    collection, query, where, getDocs, arrayUnion, arrayRemove
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   // ---- 1. PASTE YOUR FIREBASE CONFIG HERE ----
@@ -545,6 +670,265 @@
     document.getElementById('attempts').disabled = !editable;
     document.getElementById('addLogBtn').disabled = !editable;
     document.getElementById('viewOnlyNotice').style.display = editable ? 'none' : 'block';
+  }
+
+  // ---- Friends & combined list ----
+  // Storage: friendGroups/{ownerId} = { ownerId, memberIds: [up to 4 ids] }
+  // Combined entries pull straight from each participant's logs/{id} doc,
+  // which already carries their username, so no extra lookups are needed
+  // per entry. Visibility (owner + members only) is enforced by the UI here,
+  // same as everything else in this app — real privacy would need Firestore
+  // security rules restricting who can read a given friendGroups/logs doc.
+  let myFriendIds = [];
+  let myFriendUsernames = {};
+  let otherGroups = [];       // groups you belong to that someone else owns
+  let combinedEntries = [];
+  let currentGroupView = 'mine';
+
+  function toggleFriendPanel() {
+    const overlay = document.getElementById('friendPanelOverlay');
+    if (overlay.style.display === 'block') {
+      overlay.style.display = 'none';
+    } else {
+      overlay.style.display = 'block';
+      openFriendPanel();
+    }
+  }
+
+  function closeFriendPanelOnOverlay(e) {
+    if (e.target.id === 'friendPanelOverlay') {
+      document.getElementById('friendPanelOverlay').style.display = 'none';
+    }
+  }
+
+  async function openFriendPanel() {
+    await loadMyFriendGroup();
+    await loadOtherGroups();
+    populateGroupSelector();
+    currentGroupView = 'mine';
+    document.getElementById('combinedGroupSelect').value = 'mine';
+    await loadAndRenderCombined('mine');
+  }
+
+  async function loadMyFriendGroup() {
+    const snap = await getDoc(doc(db, 'friendGroups', myUser.id));
+    myFriendIds = snap.exists() ? (snap.data().memberIds || []) : [];
+    myFriendUsernames = {};
+    await Promise.all(myFriendIds.map(async (id) => {
+      try {
+        const logSnap = await getDoc(doc(db, 'logs', id));
+        myFriendUsernames[id] = logSnap.exists() ? (logSnap.data().username || `#${id}`) : `#${id}`;
+      } catch (e) {
+        myFriendUsernames[id] = `#${id}`;
+      }
+    }));
+    renderFriendChips();
+  }
+
+  function renderFriendChips() {
+    const container = document.getElementById('friendChips');
+    document.getElementById('friendCount').textContent = myFriendIds.length;
+    if (myFriendIds.length === 0) {
+      container.innerHTML = `<p style="color:#6b6d8a; font-size:13px;">No friends added yet.</p>`;
+      return;
+    }
+    container.innerHTML = myFriendIds.map(id => `
+      <span class="friend-chip">${myFriendUsernames[id] || ('#' + id)}<button class="chip-remove" data-id="${id}">×</button></span>
+    `).join('');
+    container.querySelectorAll('.chip-remove').forEach(btn => {
+      btn.addEventListener('click', () => removeFriend(btn.dataset.id));
+    });
+  }
+
+  async function addFriend() {
+    const input = document.getElementById('friendInput');
+    const typed = input.value.trim();
+    if (!typed) {
+      alert('Enter a username or ID');
+      return;
+    }
+    if (myFriendIds.length >= 4) {
+      setStatus('You can only add up to 4 friends', true);
+      return;
+    }
+    setStatus('Looking up user...');
+    const found = /^\d+$/.test(typed) ? await lookupUserById(typed) : await lookupUserByUsername(typed);
+    if (!found) {
+      setStatus('No user name found', true);
+      return;
+    }
+    if (found.id === myUser.id) {
+      setStatus("You can't add yourself", true);
+      return;
+    }
+    if (myFriendIds.includes(found.id)) {
+      setStatus('Already in your friends list', true);
+      return;
+    }
+    try {
+      await setDoc(doc(db, 'friendGroups', myUser.id), {
+        ownerId: myUser.id,
+        memberIds: arrayUnion(found.id)
+      }, { merge: true });
+      myFriendIds.push(found.id);
+      myFriendUsernames[found.id] = found.username;
+      renderFriendChips();
+      input.value = '';
+      setStatus(`Added ${found.username}`);
+      if (currentGroupView === 'mine') await loadAndRenderCombined('mine');
+    } catch (e) {
+      console.error(e);
+      setStatus('Could not add friend', true);
+    }
+  }
+
+  async function removeFriend(id) {
+    try {
+      await setDoc(doc(db, 'friendGroups', myUser.id), {
+        memberIds: arrayRemove(id)
+      }, { merge: true });
+      myFriendIds = myFriendIds.filter(fid => fid !== id);
+      delete myFriendUsernames[id];
+      renderFriendChips();
+      if (currentGroupView === 'mine') await loadAndRenderCombined('mine');
+    } catch (e) {
+      console.error(e);
+      setStatus('Could not remove friend', true);
+    }
+  }
+
+  // Finds groups owned by other people that include you as a friend
+  async function loadOtherGroups() {
+    otherGroups = [];
+    try {
+      const q = query(collection(db, 'friendGroups'), where('memberIds', 'array-contains', myUser.id));
+      const snaps = await getDocs(q);
+      for (const d of snaps.docs) {
+        const data = d.data();
+        if (data.ownerId === myUser.id) continue;
+        let ownerUsername = data.ownerId;
+        try {
+          const ownerLogSnap = await getDoc(doc(db, 'logs', data.ownerId));
+          ownerUsername = ownerLogSnap.exists() ? (ownerLogSnap.data().username || data.ownerId) : data.ownerId;
+        } catch (e) { /* fall back to id */ }
+        otherGroups.push({ ownerId: data.ownerId, ownerUsername, memberIds: data.memberIds || [] });
+      }
+    } catch (e) {
+      console.error('Could not load other groups:', e);
+    }
+  }
+
+  function populateGroupSelector() {
+    const select = document.getElementById('combinedGroupSelect');
+    let html = `<option value="mine">My Group</option>`;
+    otherGroups.forEach(g => {
+      html += `<option value="${g.ownerId}">${g.ownerUsername}'s Group</option>`;
+    });
+    select.innerHTML = html;
+  }
+
+  async function handleGroupSelectChange() {
+    currentGroupView = document.getElementById('combinedGroupSelect').value;
+    await loadAndRenderCombined(currentGroupView);
+  }
+
+  async function loadAndRenderCombined(target) {
+    let ownerId, memberIds;
+    if (target === 'mine') {
+      ownerId = myUser.id;
+      memberIds = myFriendIds;
+    } else {
+      const group = otherGroups.find(g => g.ownerId === target);
+      if (!group) {
+        combinedEntries = [];
+        renderCombinedTable();
+        return;
+      }
+      ownerId = group.ownerId;
+      memberIds = group.memberIds;
+    }
+
+    const participantIds = [ownerId, ...memberIds];
+    setStatus('Loading combined list...');
+    try {
+      const snaps = await Promise.all(participantIds.map(pid => getDoc(doc(db, 'logs', pid))));
+      combinedEntries = [];
+      snaps.forEach(snap => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        const beatenBy = data.username || 'Unknown';
+        (data.entries || []).forEach(entry => {
+          combinedEntries.push({ ...entry, beatenBy });
+        });
+      });
+      setStatus('');
+    } catch (e) {
+      console.error(e);
+      combinedEntries = [];
+      setStatus('Could not load combined list', true);
+    }
+    renderCombinedTable();
+  }
+
+  function renderCombinedTable() {
+    const tbody = document.getElementById('combinedTableBody');
+    const sortMode = document.getElementById('combinedSortSelect').value;
+    tbody.innerHTML = '';
+
+    if (combinedEntries.length === 0) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="5">No levels beaten yet by you or your friends.</td></tr>`;
+      return;
+    }
+
+    const order = combinedEntries.map((_, i) => i);
+    if (sortMode !== 'none') {
+      order.sort((a, b) => {
+        const diff = difficultyRank(combinedEntries[a].difficulty) - difficultyRank(combinedEntries[b].difficulty);
+        return sortMode === 'asc' ? diff : -diff;
+      });
+    }
+
+    const extremeDemonRows = [];
+
+    order.forEach((idx) => {
+      const entry = combinedEntries[idx];
+      const searchQuery = encodeURIComponent(`${entry.levelName} showcase`);
+      const youtubeUrl = `https://www.youtube.com/results?search_query=${searchQuery}`;
+      const isExtremeDemon = (entry.difficulty || '').toLowerCase() === 'extreme demon';
+      const difficultyCell = isExtremeDemon
+        ? `<span id="combined-diff-cell-${idx}">Checking AREDL…</span>`
+        : entry.difficulty;
+
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><strong>${entry.levelName}</strong></td>
+        <td>${difficultyCell}</td>
+        <td>${entry.attempts}</td>
+        <td>${entry.beatenBy}</td>
+        <td><a class="showcase-link" href="${youtubeUrl}" target="_blank" rel="noopener noreferrer"> YT
+        Showcase↗</a></td>
+      `;
+      tbody.appendChild(row);
+
+      if (isExtremeDemon) extremeDemonRows.push({ idx, levelName: entry.levelName });
+    });
+
+    extremeDemonRows.forEach(({ idx, levelName }) => {
+      updateCombinedAredlPlacement(idx, levelName);
+    });
+  }
+
+  async function updateCombinedAredlPlacement(idx, levelName) {
+    const cell = document.getElementById(`combined-diff-cell-${idx}`);
+    if (!cell) return;
+    try {
+      const placement = await fetchAredlPlacement(levelName);
+      if (!document.body.contains(cell)) return;
+      cell.textContent = placement ? `AREDL #${placement}` : 'Extreme Demon — not on AREDL';
+    } catch (e) {
+      console.error('AREDL lookup failed:', e);
+      if (document.body.contains(cell)) cell.textContent = 'Extreme Demon (AREDL lookup failed)';
+    }
   }
 
   // ---- Firestore read/write for the entries list ----
@@ -888,6 +1272,11 @@
   window.handleSortChange = handleSortChange;
   window.submitUsernameChange = submitUsernameChange;
   window.cancelUsernameChange = cancelUsernameChange;
+  window.toggleFriendPanel = toggleFriendPanel;
+  window.closeFriendPanelOnOverlay = closeFriendPanelOnOverlay;
+  window.addFriend = addFriend;
+  window.handleGroupSelectChange = handleGroupSelectChange;
+  window.renderCombinedTable = renderCombinedTable;
 
   attachCharFilter('authUsername');
   attachCharFilter('authPassword');
