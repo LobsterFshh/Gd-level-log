@@ -316,6 +316,37 @@
     .chip-remove:hover {
       color: #ff0000;
     }
+
+    #bucketIconBtn {
+      right: 78px;
+    }
+
+    #bucketPanelOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      z-index: 1000;
+      overflow-y: auto;
+    }
+    #bucketPanel {
+      background: #252636;
+      max-width: 720px;
+      margin: 40px auto;
+      padding: 24px;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    #bucketPanel h2 {
+      color: #00e5ff;
+      margin: 0;
+    }
+    .bucket-check {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+      accent-color: #00e5ff;
+    }
   </style>
 </head>
 <body>
@@ -346,6 +377,50 @@
     <!-- Main app: shown once logged in -->
     <div id="appContent" style="display:none;">
       <button class="friend-icon-btn" onclick="toggleFriendPanel()" title="Friends">👥</button>
+      <button class="friend-icon-btn" id="bucketIconBtn" onclick="toggleBucketPanel()" title="Bucket List">📋</button>
+
+      <div id="bucketPanelOverlay" onclick="closeBucketPanelOnOverlay(event)">
+        <div id="bucketPanel">
+          <div class="friend-panel-header">
+            <h2>Bucket List</h2>
+            <button onclick="toggleBucketPanel()">✕ Close</button>
+          </div>
+          <p class="notice" style="margin-top:10px;">Only you can see your bucket list.</p>
+
+          <div class="form-card" style="margin-top:10px;">
+            <div class="form-group">
+              <input type="text" id="bucketLevelName" placeholder="Level Name (e.g. Bloodbath)">
+              <select id="bucketDifficulty">
+                <option value="" disabled selected>Select Difficulty</option>
+                <option value="Easy">Easy</option>
+                <option value="Normal">Normal</option>
+                <option value="Hard">Hard</option>
+                <option value="Harder">Harder</option>
+                <option value="Insane">Insane</option>
+                <option value="Easy Demon">Easy Demon</option>
+                <option value="Medium Demon">Medium Demon</option>
+                <option value="Hard Demon">Hard Demon</option>
+                <option value="Insane Demon">Insane Demon</option>
+                <option value="Extreme Demon">Extreme Demon</option>
+              </select>
+              <button onclick="addBucketItem()">Add to Bucket List</button>
+            </div>
+          </div>
+          <p class="notice" style="margin-top:-10px;">Check a level off once you've beaten it — it'll move straight to your completion log.</p>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Level Name</th>
+                <th>Difficulty</th>
+                <th>Beaten?</th>
+                <th>🗑️</th>
+              </tr>
+            </thead>
+            <tbody id="bucketTableBody"></tbody>
+          </table>
+        </div>
+      </div>
 
       <div id="friendPanelOverlay" onclick="closeFriendPanelOnOverlay(event)">
         <div id="friendPanel">
@@ -477,6 +552,7 @@
   let viewingId = null;   // ID of the log currently displayed
   let viewingUsername = null;
   let logs = [];
+  let bucketItems = []; // { levelName, difficulty } — never leaves this account, no sharing/viewing by others
 
   function setStatus(msg, isError) {
     const el = document.getElementById('statusMsg');
@@ -1028,6 +1104,184 @@
     }
   }
 
+  // ---- Bucket list (private — always tied to whoever is logged in, never
+  // to whatever profile happens to currently be on-screen via the ID switcher) ----
+  // Storage: bucketLists/{ownerId} = { entries: [{ levelName, difficulty }] }
+  async function loadBucketList() {
+    setStatus('Loading bucket list...');
+    try {
+      const snap = await getDoc(doc(db, 'bucketLists', myUser.id));
+      bucketItems = snap.exists() ? (snap.data().entries || []) : [];
+      setStatus('');
+    } catch (e) {
+      console.error('Firestore error:', e);
+      bucketItems = [];
+      setStatus('Could not load bucket list', true);
+    }
+    renderBucketTable();
+  }
+
+  async function saveBucketList() {
+    try {
+      await setDoc(doc(db, 'bucketLists', myUser.id), { entries: bucketItems }, { merge: true });
+    } catch (e) {
+      console.error('Firestore error:', e);
+      setStatus('Save failed, try again', true);
+    }
+  }
+
+  function toggleBucketPanel() {
+    const overlay = document.getElementById('bucketPanelOverlay');
+    if (overlay.style.display === 'block') {
+      overlay.style.display = 'none';
+    } else {
+      overlay.style.display = 'block';
+      loadBucketList();
+    }
+  }
+
+  function closeBucketPanelOnOverlay(e) {
+    if (e.target.id === 'bucketPanelOverlay') {
+      document.getElementById('bucketPanelOverlay').style.display = 'none';
+    }
+  }
+
+  async function addBucketItem() {
+    const levelInput = document.getElementById('bucketLevelName');
+    const diffInput = document.getElementById('bucketDifficulty');
+
+    const levelName = levelInput.value.trim();
+    const difficulty = diffInput.value;
+
+    if (levelName === '') {
+      alert('Please enter a level name!');
+      return;
+    }
+    if (difficulty === '') {
+      alert('Please select a difficulty!');
+      return;
+    }
+
+    bucketItems.push({ levelName, difficulty });
+    renderBucketTable();
+    await saveBucketList();
+    setStatus('Added to bucket list');
+
+    levelInput.value = '';
+    diffInput.value = '';
+  }
+
+  async function removeBucketItem(index) {
+    bucketItems.splice(index, 1);
+    renderBucketTable();
+    await saveBucketList();
+    setStatus('Removed from bucket list');
+  }
+
+  // Appends a beaten level straight to the logged-in user's own completion
+  // log, regardless of whose log happens to be on screen via the ID
+  // switcher — reads fresh from Firestore rather than trusting the shared
+  // `logs` in-memory array, since that array may currently hold someone
+  // else's entries.
+  async function addEntryToMyLog(entry) {
+    let myEntries;
+    try {
+      const snap = await getDoc(doc(db, 'logs', myUser.id));
+      myEntries = snap.exists() ? (snap.data().entries || []) : [];
+    } catch (e) {
+      console.error('Firestore error:', e);
+      myEntries = (viewingId === myUser.id) ? logs.slice() : [];
+    }
+    myEntries.push(entry);
+    try {
+      await setDoc(doc(db, 'logs', myUser.id), { entries: myEntries, username: myUser.username }, { merge: true });
+    } catch (e) {
+      console.error('Firestore error:', e);
+      setStatus('Save failed, try again', true);
+      return;
+    }
+
+    if (viewingId === myUser.id) {
+      logs = myEntries;
+      renderTable();
+    }
+  }
+
+  async function markBucketItemBeaten(index) {
+    const item = bucketItems[index];
+    if (!item) return;
+
+    const attemptsRaw = prompt(`How many attempts did it take to beat "${item.levelName}"? (optional)`);
+    if (attemptsRaw === null) {
+      // Cancelled — leave the bucket list untouched and uncheck the box
+      renderBucketTable();
+      return;
+    }
+    const attempts = attemptsRaw.trim() || 'N/A';
+
+    await addEntryToMyLog({ levelName: item.levelName, difficulty: item.difficulty, attempts });
+
+    bucketItems.splice(index, 1);
+    await saveBucketList();
+    renderBucketTable();
+    setStatus(`${item.levelName} moved to your completion log!`);
+  }
+
+  function renderBucketTable() {
+    const tbody = document.getElementById('bucketTableBody');
+    tbody.innerHTML = '';
+
+    if (bucketItems.length === 0) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="4">Your bucket list is empty. Add a level above.</td></tr>`;
+      return;
+    }
+
+    const extremeDemonRows = [];
+
+    bucketItems.forEach((item, index) => {
+      const { html: difficultyCell, isExtremeDemon } = renderDifficultyCell(item.difficulty, 'bucket-diff-cell', index);
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><strong>${item.levelName}</strong></td>
+        <td>${difficultyCell}</td>
+        <td style="text-align:center;"><input type="checkbox" class="bucket-check" data-index="${index}" title="Mark as beaten"></td>
+        <td><button class="delete-btn" data-index="${index}">Delete</button></td>
+      `;
+      tbody.appendChild(row);
+
+      if (isExtremeDemon) extremeDemonRows.push({ index, levelName: item.levelName });
+    });
+
+    tbody.querySelectorAll('.bucket-check').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          markBucketItemBeaten(Number(e.target.dataset.index));
+        }
+      });
+    });
+
+    tbody.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => removeBucketItem(Number(btn.dataset.index)));
+    });
+
+    extremeDemonRows.forEach(({ index, levelName }) => {
+      updateBucketAredlPlacement(index, levelName);
+    });
+  }
+
+  async function updateBucketAredlPlacement(idx, levelName) {
+    const cell = document.getElementById(`bucket-diff-cell-${idx}`);
+    if (!cell) return;
+    try {
+      const placement = await fetchAredlPlacement(levelName);
+      if (!document.body.contains(cell)) return;
+      cell.textContent = placement ? `AREDL #${placement}` : 'Extreme Demon — not on AREDL';
+    } catch (e) {
+      console.error('AREDL lookup failed:', e);
+      if (document.body.contains(cell)) cell.textContent = 'Extreme Demon (AREDL lookup failed)';
+    }
+  }
+
   function updateViewingDisplay(username, id) {
     document.getElementById('currentIdDisplay').textContent = username;
     document.getElementById('currentIdSub').textContent = 'ID: ' + id;
@@ -1299,6 +1553,7 @@
     viewingId = null;
     viewingUsername = null;
     logs = [];
+    bucketItems = [];
     try {
       localStorage.removeItem('myUser');
     } catch (e) {
@@ -1350,6 +1605,9 @@
   window.addFriend = addFriend;
   window.handleGroupSelectChange = handleGroupSelectChange;
   window.renderCombinedTable = renderCombinedTable;
+  window.toggleBucketPanel = toggleBucketPanel;
+  window.closeBucketPanelOnOverlay = closeBucketPanelOnOverlay;
+  window.addBucketItem = addBucketItem;
 
   attachCharFilter('authUsername');
   attachCharFilter('authPassword');
