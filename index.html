@@ -197,6 +197,179 @@
       color: #6b6d8a;
       padding: 24px;
     }
+    .empty-row-msg {
+      text-align: center;
+      color: #6b6d8a;
+      padding: 24px;
+      background: #252636;
+      border-radius: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+
+    /* Swipeable log table (div-based so rows can be dragged horizontally) */
+    .log-table {
+      background: #252636;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    .log-table-head {
+      display: flex;
+      background-color: #1f202e;
+      color: #00e5ff;
+      font-weight: bold;
+    }
+    .log-col {
+      padding: 14px;
+      text-align: left;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .log-col-name { flex: 2; min-width: 0; }
+    .log-col-diff { flex: 1; min-width: 0; }
+    .log-col-attempts { flex: 1; min-width: 0; }
+    .log-col-showcase { flex: 1; min-width: 0; }
+
+    .log-row-wrap {
+      position: relative;
+      display: flex;
+      overflow: hidden;
+      border-bottom: 1px solid #3d3f58;
+    }
+    .log-row-wrap:last-child {
+      border-bottom: none;
+    }
+    .log-row-delete-bg {
+      flex: 0 0 auto;
+      width: 0;
+      overflow: hidden;
+      background: #ff5252;
+      display: flex;
+      align-items: stretch;
+      justify-content: flex-end;
+    }
+    .log-row-delete-bg.bouncy {
+      transition: width 0.6s cubic-bezier(0.34, 1.85, 0.4, 1);
+    }
+    .log-delete-btn {
+      width: 96px;
+      min-width: 96px;
+      border: none;
+      background: transparent;
+      color: #fff;
+      font-weight: bold;
+      font-size: 13px;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .log-delete-btn:hover {
+      background: rgba(0, 0, 0, 0.15);
+    }
+    .log-row {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      background: #252636;
+      position: relative;
+      touch-action: pan-y;
+      cursor: grab;
+      user-select: none;
+      overflow: hidden;
+    }
+    .log-row.dragging {
+      cursor: grabbing;
+    }
+    .log-row-columns {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      flex-shrink: 0;
+    }
+    .log-row-name-preview {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      height: 100%;
+      padding: 14px;
+      font-size: 17px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .log-row-preview-face {
+      height: 32px;
+      width: auto;
+      max-width: 44px;
+      flex-shrink: 0;
+    }
+    .log-row.swiping .log-row-columns {
+      display: none;
+    }
+    .log-row.swiping .log-row-name-preview {
+      display: flex;
+    }
+
+    /* Undo toast — pops in at the top of the page after a delete */
+    #undoToast {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-80px);
+      background: #252636;
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 1px solid #3d3f58;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      z-index: 1300;
+      opacity: 0;
+      pointer-events: none;
+      overflow: hidden;
+      transition: transform 0.55s cubic-bezier(0.34, 1.85, 0.4, 1), opacity 0.3s ease;
+    }
+    #undoToast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+    #undoToast span {
+      font-size: 14px;
+      white-space: nowrap;
+    }
+    .undo-toast-btn {
+      background: #00e5ff;
+      color: #1a1a24;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .undo-toast-btn:hover {
+      background: #00b3cc;
+    }
+    #undoToastBar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 3px;
+      background: #00e5ff;
+      width: 100%;
+    }
+    #undoToastBar.countdown {
+      animation: undoCountdown 5s linear forwards;
+    }
+    @keyframes undoCountdown {
+      from { width: 100%; }
+      to { width: 0%; }
+    }
     .diff-face-wrap {
       display: flex;
       flex-direction: column;
@@ -404,9 +577,84 @@
     .btn-secondary:hover {
       background-color: #4d4f6e;
     }
+
+    #filterModalOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      z-index: 1100;
+      align-items: center;
+      justify-content: center;
+    }
+    #filterModal {
+      background: #252636;
+      width: 90%;
+      max-width: 420px;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 24px;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    #filterModal h2 {
+      color: #00e5ff;
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .filter-option {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 4px;
+      cursor: pointer;
+      font-size: 14px;
+      user-select: none;
+    }
+    .filter-option input[type="checkbox"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .filter-box {
+      width: 22px;
+      height: 22px;
+      min-width: 22px;
+      border-radius: 6px;
+      background: #3d3f58;
+      border: 2px solid #55597a;
+      position: relative;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .filter-option:hover .filter-box {
+      border-color: #6b6f96;
+    }
+    .filter-option input:checked + .filter-box {
+      background: #55597a;
+      border-color: #00e5ff;
+    }
+    .filter-option input:checked + .filter-box::after {
+      content: '';
+      position: absolute;
+      left: 6px;
+      top: 2px;
+      width: 6px;
+      height: 12px;
+      border: solid #00e5ff;
+      border-width: 0 3px 3px 0;
+      transform: rotate(45deg);
+    }
   </style>
 </head>
 <body>
+
+  <div id="undoToast">
+    <span id="undoToastText">Log removed</span>
+    <button class="undo-toast-btn" onclick="undoPendingDelete()">Undo</button>
+    <div id="undoToastBar"></div>
+  </div>
 
   <div class="container">
     <h1>Geometry Dash Completion Log</h1>
@@ -447,6 +695,90 @@
           <div class="modal-actions">
             <button class="btn-secondary" onclick="cancelAttemptsModal()">Cancel</button>
             <button onclick="confirmAttemptsModal()">Confirm</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="filterModalOverlay" onclick="closeFilterModalOnOverlay(event)">
+        <div id="filterModal">
+          <div class="friend-panel-header">
+            <h2>Filter Levels</h2>
+            <button onclick="toggleFilterModal()">✕ Close</button>
+          </div>
+          <p class="notice" style="margin-top:10px; text-align:left;">Check every box you want to include. Only levels matching a checked difficulty (or a checked AREDL rank option, for Extreme Demons) will show up.</p>
+
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="easy" checked>
+            <span class="filter-box"></span>
+            Easy
+          </label>
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="normal" checked>
+            <span class="filter-box"></span>
+            Normal
+          </label>
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="hard" checked>
+            <span class="filter-box"></span>
+            Hard
+          </label>
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="harder" checked>
+            <span class="filter-box"></span>
+            Harder
+          </label>
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="insane" checked>
+            <span class="filter-box"></span>
+            Insane
+          </label>
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="easy demon" checked>
+            <span class="filter-box"></span>
+            Easy Demon
+          </label>
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="medium demon" checked>
+            <span class="filter-box"></span>
+            Medium Demon
+          </label>
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="hard demon" checked>
+            <span class="filter-box"></span>
+            Hard Demon
+          </label>
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="insane demon" checked>
+            <span class="filter-box"></span>
+            Insane Demon
+          </label>
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="extreme demon" checked>
+            <span class="filter-box"></span>
+            Extreme Demon
+          </label>
+
+          <div style="height:1px; background:#3d3f58; margin:10px 0;"></div>
+
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="under1000">
+            <span class="filter-box"></span>
+            AREDL Rank Under #1000 (inclusive)
+          </label>
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="under500">
+            <span class="filter-box"></span>
+            AREDL Rank Under #500 (inclusive)
+          </label>
+          <label class="filter-option">
+            <input type="checkbox" class="filter-checkbox" value="under150">
+            <span class="filter-box"></span>
+            AREDL Rank Under #150 (inclusive)
+          </label>
+
+          <div class="modal-actions">
+            <button class="btn-secondary" onclick="clearFilters()">Reset</button>
+            <button onclick="applyFilters()">Apply</button>
           </div>
         </div>
       </div>
@@ -574,28 +906,27 @@
       </div>
       <p class="notice" id="viewOnlyNotice" style="display:none; margin-top:-10px;">🔒 Read-only — you're viewing another user's log.</p>
 
-      <div style="display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-bottom:10px;">
-        <label for="sortSelect" style="font-size:12px; color:#9a9cb8;">Sort:</label>
-        <select id="sortSelect" onchange="handleSortChange()" style="min-width:200px;">
-          <option value="none">Order Added</option>
-          <option value="asc">Difficulty: Easy → Extreme</option>
-          <option value="desc">Difficulty: Extreme → Easy</option>
-        </select>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+        <button onclick="toggleFilterModal()" id="filterBtn">🔍 Filter</button>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <label for="sortSelect" style="font-size:12px; color:#9a9cb8;">Sort:</label>
+          <select id="sortSelect" onchange="handleSortChange()" style="min-width:200px;">
+            <option value="none">Order Added</option>
+            <option value="asc">Difficulty: Easy → Extreme</option>
+            <option value="desc">Difficulty: Extreme → Easy</option>
+          </select>
+        </div>
       </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Level Name</th>
-            <th>Difficulty</th>
-            <th>Attempts</th>
-            <th>Showcase</th>
-            <th>🗑️</th>
-          </tr>
-        </thead>
-        <tbody id="logTableBody">
-          </tbody>
-      </table>
+      <div class="log-table">
+        <div class="log-table-head">
+          <div class="log-col log-col-name">Level Name</div>
+          <div class="log-col log-col-diff">Difficulty</div>
+          <div class="log-col log-col-attempts">Attempts</div>
+          <div class="log-col log-col-showcase">Showcase</div>
+        </div>
+        <div id="logTableBody" class="log-table-body"></div>
+      </div>
     </div>
   </div>
 
@@ -865,19 +1196,91 @@
     }
   }
 
+  // ---- Filter (display-only, same as sort — never touches Firestore) ----
+  // A level shows up if its own difficulty is checked, OR — for Extreme
+  // Demons specifically — if a checked AREDL rank option matches its live
+  // placement. The rank options are an additional way in, not a replacement:
+  // checking "Under #150" shows top-150 Extreme Demons even if the plain
+  // "Extreme Demon" box is unchecked.
+  let activeFilters = new Set(DIFFICULTY_ORDER);
+  const AREDL_FILTER_THRESHOLDS = { under1000: 1000, under500: 500, under150: 150 };
+
+  function passesActiveFilters(entry) {
+    if (activeFilters.size === 0) return false;
+
+    const diffKey = (entry.difficulty || '').toLowerCase();
+    if (activeFilters.has(diffKey)) return true;
+
+    const isExtremeDemon = diffKey === 'extreme demon';
+    if (!isExtremeDemon) return false;
+
+    const position = getAredlPositionSync(entry.levelName);
+    if (position == null) return false;
+
+    return Array.from(activeFilters).some(
+      key => AREDL_FILTER_THRESHOLDS[key] != null && position <= AREDL_FILTER_THRESHOLDS[key]
+    );
+  }
+
+  function toggleFilterModal() {
+    const overlay = document.getElementById('filterModalOverlay');
+    if (overlay.style.display === 'flex') {
+      overlay.style.display = 'none';
+    } else {
+      // Reflect whatever's currently applied each time the modal is reopened
+      document.querySelectorAll('.filter-checkbox').forEach(cb => {
+        cb.checked = activeFilters.has(cb.value);
+      });
+      overlay.style.display = 'flex';
+    }
+  }
+
+  function closeFilterModalOnOverlay(e) {
+    if (e.target.id === 'filterModalOverlay') {
+      document.getElementById('filterModalOverlay').style.display = 'none';
+    }
+  }
+
+  async function applyFilters() {
+    const checked = Array.from(document.querySelectorAll('.filter-checkbox:checked')).map(cb => cb.value);
+    if (checked.some(v => AREDL_FILTER_THRESHOLDS[v] != null)) {
+      // An AREDL-rank filter is selected — make sure placements are loaded
+      // before we try to match against them.
+      try { await getAredlList(); } catch (e) { /* entries needing rank data just won't match */ }
+    }
+    activeFilters = new Set(checked);
+    document.getElementById('filterModalOverlay').style.display = 'none';
+    renderTable();
+  }
+
+  function clearFilters() {
+    document.querySelectorAll('.filter-checkbox').forEach(cb => {
+      cb.checked = DIFFICULTY_ORDER.includes(cb.value);
+    });
+    activeFilters = new Set(DIFFICULTY_ORDER);
+    document.getElementById('filterModalOverlay').style.display = 'none';
+    renderTable();
+  }
+
   function renderTable() {
     const tbody = document.getElementById('logTableBody');
     tbody.innerHTML = '';
 
     if (logs.length === 0) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="5">No logs yet for this user. Add your first one above.</td></tr>`;
+      tbody.innerHTML = `<div class="empty-row-msg">No logs yet for this user. Add your first one above.</div>`;
       return;
     }
 
     const editable = canEdit();
 
-    // Sort by difficulty tier for display only — data order in Firestore is untouched
-    const order = logs.map((_, i) => i);
+    // Filter first, then sort by difficulty tier — both display-only, data order in Firestore is untouched
+    const order = logs.map((_, i) => i).filter(i => passesActiveFilters(logs[i]));
+
+    if (order.length === 0) {
+      tbody.innerHTML = `<div class="empty-row-msg">No levels match the current filter.</div>`;
+      return;
+    }
+
     if (sortMode !== 'none') {
       order.sort((a, b) => {
         const diff = difficultyRank(logs[a].difficulty, logs[a].levelName) - difficultyRank(logs[b].difficulty, logs[b].levelName);
@@ -891,36 +1294,144 @@
       const log = logs[index];
       const searchQuery = encodeURIComponent(`${log.levelName} showcase`);
       const youtubeUrl = `https://www.youtube.com/results?search_query=${searchQuery}`;
-      const deleteCell = editable
-        ? `<button class="delete-btn" data-index="${index}">Delete</button>`
-        : '';
       const { html: difficultyCell, isExtremeDemon } = renderDifficultyCell(log.difficulty, 'diff-cell', index);
+      const previewFaceSrc = DIFFICULTY_FACES[(log.difficulty || '').toLowerCase()];
+      const previewFaceImg = previewFaceSrc
+        ? `<img class="log-row-preview-face" src="${previewFaceSrc}" alt="${log.difficulty}" title="${log.difficulty}">`
+        : '';
 
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td><strong>${log.levelName}</strong></td>
-        <td>${difficultyCell}</td>
-        <td>${log.attempts}</td>
-        <td><a class="showcase-link" href="${youtubeUrl}" target="_blank" rel="noopener noreferrer"> YT
-        Showcase↗</a></td>
-        <td>${deleteCell}</td>
+      const wrap = document.createElement('div');
+      wrap.className = 'log-row-wrap';
+      wrap.innerHTML = `
+        <div class="log-row" data-index="${index}">
+          <div class="log-row-columns">
+            <div class="log-col log-col-name"><strong>${log.levelName}</strong></div>
+            <div class="log-col log-col-diff">${difficultyCell}</div>
+            <div class="log-col log-col-attempts">${log.attempts}</div>
+            <div class="log-col log-col-showcase"><a class="showcase-link" href="${youtubeUrl}" target="_blank" rel="noopener noreferrer">YT Showcase↗</a></div>
+          </div>
+          <div class="log-row-name-preview">${previewFaceImg}<strong>${log.levelName}</strong></div>
+        </div>
+        <div class="log-row-delete-bg"><button class="log-delete-btn" type="button">🗑️ Delete</button></div>
       `;
-      tbody.appendChild(row);
+      tbody.appendChild(wrap);
 
       if (isExtremeDemon) {
         extremeDemonRows.push({ index, levelName: log.levelName });
       }
     });
 
-    tbody.querySelectorAll('.delete-btn').forEach(btn => {
-      btn.addEventListener('click', () => deleteLog(Number(btn.dataset.index)));
-    });
+    if (editable) {
+      tbody.querySelectorAll('.log-row').forEach(row => attachSwipeToDelete(row));
+    }
 
     // Fetch each Extreme Demon's live AREDL placement without blocking the render
     extremeDemonRows.forEach(({ index, levelName }) => {
       updateAredlPlacement(index, levelName);
     });
   }
+
+  // Swipe-to-delete: drag a row left (mouse or touch — Pointer Events cover
+  // both) and the red delete button grows to match your finger exactly. Past
+  // the halfway point, letting go snaps it open to exactly half the row width
+  // with a big bouncy overshoot — the other half collapses down to just the
+  // level name you're about to delete. Short of halfway (or tapping an
+  // already-open row) snaps it back closed. You still have to tap the
+  // revealed button to actually delete. Opening a row closes any other row
+  // left open.
+  let openSwipeRow = null; // the currently-open row's close() function, if any
+
+  function attachSwipeToDelete(row) {
+    const index = Number(row.dataset.index);
+    const wrap = row.closest('.log-row-wrap');
+    const deleteBg = wrap.querySelector('.log-row-delete-bg');
+    const deleteBtn = wrap.querySelector('.log-delete-btn');
+    let startX = 0;
+    let baseReveal = 0;
+    let currentReveal = 0;
+    let rowWidth = 0;
+    let dragging = false;
+    let activePointerId = null;
+    let isOpen = false;
+
+    function setReveal(px, bouncy) {
+      deleteBg.classList.toggle('bouncy', bouncy);
+      deleteBg.style.width = `${px}px`;
+      row.classList.toggle('swiping', px > 8);
+    }
+
+    function close(bouncy) {
+      isOpen = false;
+      setReveal(0, bouncy);
+      if (openSwipeRow === close) openSwipeRow = null;
+    }
+
+    function open(bouncy) {
+      if (openSwipeRow && openSwipeRow !== close) openSwipeRow();
+      isOpen = true;
+      setReveal(rowWidth / 2, bouncy);
+      openSwipeRow = close;
+    }
+
+    function onPointerDown(e) {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      dragging = true;
+      activePointerId = e.pointerId;
+      startX = e.clientX;
+      rowWidth = wrap.offsetWidth;
+      baseReveal = isOpen ? rowWidth / 2 : 0;
+      currentReveal = baseReveal;
+      row.classList.add('dragging');
+      deleteBg.classList.remove('bouncy');
+      row.setPointerCapture(e.pointerId);
+    }
+
+    function onPointerMove(e) {
+      if (!dragging || e.pointerId !== activePointerId) return;
+      const delta = e.clientX - startX; // leftward drag is negative
+      currentReveal = Math.max(0, Math.min(rowWidth, baseReveal - delta));
+      setReveal(currentReveal, false);
+    }
+
+    function onPointerUp(e) {
+      if (!dragging || e.pointerId !== activePointerId) return;
+      dragging = false;
+      row.classList.remove('dragging');
+
+      const moved = Math.abs(currentReveal - baseReveal);
+      if (moved < 5 && baseReveal === rowWidth / 2) {
+        // a plain tap on an already-open row closes it again
+        close(true);
+        return;
+      }
+
+      if (currentReveal >= rowWidth / 4) {
+        open(true);
+      } else {
+        close(true);
+      }
+    }
+
+    function onDeleteClick(e) {
+      e.stopPropagation();
+      openSwipeRow = null;
+      setReveal(rowWidth || wrap.offsetWidth, true);
+      row.style.opacity = '0';
+      row.style.transition = 'opacity 0.3s ease 0.15s';
+      deleteBg.addEventListener('transitionend', function handler(ev) {
+        if (ev.propertyName !== 'width') return;
+        deleteBg.removeEventListener('transitionend', handler);
+        requestDeleteLog(index);
+      });
+    }
+
+    row.addEventListener('pointerdown', onPointerDown);
+    row.addEventListener('pointermove', onPointerMove);
+    row.addEventListener('pointerup', onPointerUp);
+    row.addEventListener('pointercancel', onPointerUp);
+    deleteBtn.addEventListener('click', onDeleteClick);
+  }
+
 
   function updateEditPermissions() {
     const editable = canEdit();
@@ -1530,12 +2041,61 @@
     attInput.value = '';
   }
 
-  async function deleteLog(index) {
+  // Deletes are optimistic and reversible for 5 seconds: the entry leaves
+  // `logs` (and the screen) immediately, but isn't saved to Firestore until
+  // the undo window expires. Only one pending delete is tracked at a time —
+  // starting a new one finalizes (persists) whatever was still pending.
+  let pendingDelete = null; // { log, index, timeoutId }
+
+  function requestDeleteLog(index) {
     if (!canEdit()) return;
+    if (pendingDelete) finalizePendingDelete();
+
+    const log = logs[index];
     logs.splice(index, 1);
     renderTable();
+
+    pendingDelete = {
+      log,
+      index,
+      timeoutId: setTimeout(finalizePendingDelete, 5000)
+    };
+    showUndoToast(log.levelName);
+  }
+
+  async function finalizePendingDelete() {
+    if (!pendingDelete) return;
+    clearTimeout(pendingDelete.timeoutId);
+    pendingDelete = null;
+    hideUndoToast();
     await saveLogsForId(viewingId);
     setStatus('Log removed');
+  }
+
+  function undoPendingDelete() {
+    if (!pendingDelete) return;
+    clearTimeout(pendingDelete.timeoutId);
+    const { log, index } = pendingDelete;
+    pendingDelete = null;
+    logs.splice(Math.min(index, logs.length), 0, log);
+    renderTable();
+    hideUndoToast();
+    setStatus('Delete undone');
+  }
+
+  function showUndoToast(levelName) {
+    const toast = document.getElementById('undoToast');
+    const text = document.getElementById('undoToastText');
+    const bar = document.getElementById('undoToastBar');
+    text.textContent = `Removed "${levelName}"`;
+    bar.classList.remove('countdown');
+    void bar.offsetWidth; // force reflow so a re-triggered countdown restarts cleanly
+    bar.classList.add('countdown');
+    toast.classList.add('show');
+  }
+
+  function hideUndoToast() {
+    document.getElementById('undoToast').classList.remove('show');
   }
 
   // ---- Auth screen handlers ----
@@ -1780,6 +2340,11 @@
   window.cancelAttemptsModal = cancelAttemptsModal;
   window.closeAttemptsModalOnOverlay = closeAttemptsModalOnOverlay;
   window.toggleIconMenu = toggleIconMenu;
+  window.toggleFilterModal = toggleFilterModal;
+  window.closeFilterModalOnOverlay = closeFilterModalOnOverlay;
+  window.applyFilters = applyFilters;
+  window.clearFilters = clearFilters;
+  window.undoPendingDelete = undoPendingDelete;
 
   document.getElementById('attemptsModalInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') confirmAttemptsModal();
