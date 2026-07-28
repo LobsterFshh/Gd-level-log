@@ -241,9 +241,6 @@
     }
 
     .friend-icon-btn {
-      position: fixed;
-      top: 20px;
-      right: 20px;
       width: 48px;
       height: 48px;
       border-radius: 50%;
@@ -256,11 +253,36 @@
       justify-content: center;
       cursor: pointer;
       box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-      z-index: 900;
       padding: 0;
     }
     .friend-icon-btn:hover {
       background: #2f3145;
+    }
+
+    #iconMenuToggle {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 901;
+    }
+
+    #iconMenuDropdown {
+      position: fixed;
+      top: 78px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 900;
+      opacity: 0;
+      transform: translateY(-10px);
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+    #iconMenuDropdown.open {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
     }
 
     #friendPanelOverlay {
@@ -317,10 +339,6 @@
       color: #ff0000;
     }
 
-    #bucketIconBtn {
-      right: 78px;
-    }
-
     #bucketPanelOverlay {
       display: none;
       position: fixed;
@@ -346,6 +364,45 @@
       height: 20px;
       cursor: pointer;
       accent-color: #00e5ff;
+    }
+
+    #attemptsModalOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      z-index: 1100;
+      align-items: center;
+      justify-content: center;
+    }
+    #attemptsModal {
+      background: #252636;
+      width: 90%;
+      max-width: 380px;
+      padding: 24px;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    #attemptsModal h3 {
+      margin: 0 0 6px 0;
+      color: #00e5ff;
+    }
+    #attemptsModalInput {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .btn-secondary {
+      background-color: #3d3f58;
+      color: #fff;
+    }
+    .btn-secondary:hover {
+      background-color: #4d4f6e;
     }
   </style>
 </head>
@@ -376,8 +433,23 @@
 
     <!-- Main app: shown once logged in -->
     <div id="appContent" style="display:none;">
-      <button class="friend-icon-btn" onclick="toggleFriendPanel()" title="Friends">👥</button>
-      <button class="friend-icon-btn" id="bucketIconBtn" onclick="toggleBucketPanel()" title="Bucket List">📋</button>
+      <button class="friend-icon-btn" id="iconMenuToggle" onclick="toggleIconMenu()" title="Menu">☰</button>
+      <div id="iconMenuDropdown">
+        <button class="friend-icon-btn" onclick="toggleFriendPanel()" title="Friends">👥</button>
+        <button class="friend-icon-btn" onclick="toggleBucketPanel()" title="Bucket List">📋</button>
+      </div>
+
+      <div id="attemptsModalOverlay" onclick="closeAttemptsModalOnOverlay(event)">
+        <div id="attemptsModal">
+          <h3>Level Beaten! 🎉</h3>
+          <p id="attemptsModalLabel" class="notice" style="margin:0 0 14px 0; text-align:left;"></p>
+          <input type="number" id="attemptsModalInput" placeholder="Attempts (optional)" min="0">
+          <div class="modal-actions">
+            <button class="btn-secondary" onclick="cancelAttemptsModal()">Cancel</button>
+            <button onclick="confirmAttemptsModal()">Confirm</button>
+          </div>
+        </div>
+      </div>
 
       <div id="bucketPanelOverlay" onclick="closeBucketPanelOnOverlay(event)">
         <div id="bucketPanel">
@@ -444,7 +516,7 @@
             </select>
             <div style="display:flex; align-items:center; gap:8px;">
               <label for="combinedSortSelect" style="font-size:12px; color:#9a9cb8;">Sort:</label>
-              <select id="combinedSortSelect" onchange="renderCombinedTable()" style="min-width:200px;">
+              <select id="combinedSortSelect" onchange="handleCombinedSortChange()" style="min-width:200px;">
                 <option value="none">Order</option>
                 <option value="asc">Difficulty: Easy → Extreme</option>
                 <option value="desc">Difficulty: Extreme → Easy</option>
@@ -652,9 +724,28 @@
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'harder', 'insane', 'easy demon', 'medium demon', 'hard demon', 'insane demon', 'extreme demon'];
   let sortMode = 'none'; // 'none' | 'asc' | 'desc'
 
-  function difficultyRank(difficulty) {
-    const idx = DIFFICULTY_ORDER.indexOf((difficulty || '').toLowerCase());
-    return idx === -1 ? DIFFICULTY_ORDER.length : idx;
+  // Every Extreme Demon shares the same tier index, but they aren't equally
+  // hard — a #1 AREDL placement is a different beast than a #900 one. Once
+  // the AREDL list is cached (see getAredlList below), we fold each Extreme
+  // Demon's placement into its rank as a fractional offset so sorting still
+  // groups all Extreme Demons together (offset stays within (0, 1)) but
+  // orders them by actual difficulty: lower AREDL position (harder) pushes
+  // the offset higher, so it sorts later within the tier — same direction as
+  // "harder = further toward the Extreme end" for every other tier.
+  function difficultyRank(difficulty, levelName) {
+    const key = (difficulty || '').toLowerCase();
+    const idx = DIFFICULTY_ORDER.indexOf(key);
+    const baseRank = idx === -1 ? DIFFICULTY_ORDER.length : idx;
+
+    if (key === 'extreme demon' && aredlListCache) {
+      const position = getAredlPositionSync(levelName);
+      if (position != null && position > 0) {
+        // Bounded in (0, 1): rank #1 (hardest) -> close to 1, rank #10,000 -> close to 0.
+        const hardnessOffset = 1 / (position + 1);
+        return baseRank + hardnessOffset;
+      }
+    }
+    return baseRank;
   }
 
   // Difficulty face images, keyed by lowercase difficulty name (base64-embedded so the file stays self-contained)
@@ -690,8 +781,13 @@
     };
   }
 
-  function handleSortChange() {
+  async function handleSortChange() {
     sortMode = document.getElementById('sortSelect').value;
+    if (sortMode !== 'none') {
+      // Make sure Extreme Demon placements are available before we sort by
+      // them; harmless no-op if already cached from a prior render.
+      try { await getAredlList(); } catch (e) { /* fall back to tier-only order */ }
+    }
     renderTable();
   }
 
@@ -743,6 +839,17 @@
     return match ? match.position : null;
   }
 
+  // Synchronous counterpart used by the sort comparator — only reads
+  // whatever's already cached, never triggers a fetch itself. Callers that
+  // need the list guaranteed present (e.g. the sort dropdown handlers) call
+  // getAredlList() first and let this just read from the resulting cache.
+  function getAredlPositionSync(levelName) {
+    if (!aredlListCache || !levelName) return null;
+    const target = levelName.trim().toLowerCase();
+    const match = aredlListCache.find(lvl => (lvl.name || '').trim().toLowerCase() === target);
+    return match ? match.position : null;
+  }
+
   // Fetches the live AREDL placement for one row and patches just that cell,
   // so the number shown is always current without blocking the table render.
   async function updateAredlPlacement(rowIndex, levelName) {
@@ -773,7 +880,7 @@
     const order = logs.map((_, i) => i);
     if (sortMode !== 'none') {
       order.sort((a, b) => {
-        const diff = difficultyRank(logs[a].difficulty) - difficultyRank(logs[b].difficulty);
+        const diff = difficultyRank(logs[a].difficulty, logs[a].levelName) - difficultyRank(logs[b].difficulty, logs[b].levelName);
         return sortMode === 'asc' ? diff : -diff;
       });
     }
@@ -837,11 +944,20 @@
   let combinedEntries = [];
   let currentGroupView = 'mine';
 
+  function toggleIconMenu() {
+    document.getElementById('iconMenuDropdown').classList.toggle('open');
+  }
+
+  function closeIconMenu() {
+    document.getElementById('iconMenuDropdown').classList.remove('open');
+  }
+
   function toggleFriendPanel() {
     const overlay = document.getElementById('friendPanelOverlay');
     if (overlay.style.display === 'block') {
       overlay.style.display = 'none';
     } else {
+      closeIconMenu();
       overlay.style.display = 'block';
       openFriendPanel();
     }
@@ -1022,6 +1138,14 @@
     renderCombinedTable();
   }
 
+  async function handleCombinedSortChange() {
+    const sortMode = document.getElementById('combinedSortSelect').value;
+    if (sortMode !== 'none') {
+      try { await getAredlList(); } catch (e) { /* fall back to tier-only order */ }
+    }
+    renderCombinedTable();
+  }
+
   function renderCombinedTable() {
     const tbody = document.getElementById('combinedTableBody');
     const sortMode = document.getElementById('combinedSortSelect').value;
@@ -1035,7 +1159,7 @@
     const order = combinedEntries.map((_, i) => i);
     if (sortMode !== 'none') {
       order.sort((a, b) => {
-        const diff = difficultyRank(combinedEntries[a].difficulty) - difficultyRank(combinedEntries[b].difficulty);
+        const diff = difficultyRank(combinedEntries[a].difficulty, combinedEntries[a].levelName) - difficultyRank(combinedEntries[b].difficulty, combinedEntries[b].levelName);
         return sortMode === 'asc' ? diff : -diff;
       });
     }
@@ -1135,6 +1259,7 @@
     if (overlay.style.display === 'block') {
       overlay.style.display = 'none';
     } else {
+      closeIconMenu();
       overlay.style.display = 'block';
       loadBucketList();
     }
@@ -1207,17 +1332,59 @@
     }
   }
 
+  // In-page replacement for window.prompt() — shows a small modal and
+  // resolves a Promise with the entered attempts (or null if cancelled).
+  // Only one modal can be open at a time, so a single module-level resolver
+  // is enough; a second call before the first resolves would just overwrite
+  // it, but nothing in this app opens two of these back-to-back.
+  let _attemptsModalResolve = null;
+
+  function askForAttempts(levelName) {
+    return new Promise((resolve) => {
+      _attemptsModalResolve = resolve;
+      document.getElementById('attemptsModalLabel').textContent =
+        `How many attempts did it take to beat "${levelName}"?`;
+      const input = document.getElementById('attemptsModalInput');
+      input.value = '';
+      document.getElementById('attemptsModalOverlay').style.display = 'flex';
+      setTimeout(() => input.focus(), 0);
+    });
+  }
+
+  function resolveAttemptsModal(result) {
+    document.getElementById('attemptsModalOverlay').style.display = 'none';
+    if (_attemptsModalResolve) {
+      const resolve = _attemptsModalResolve;
+      _attemptsModalResolve = null;
+      resolve(result);
+    }
+  }
+
+  function confirmAttemptsModal() {
+    const input = document.getElementById('attemptsModalInput');
+    resolveAttemptsModal(input.value.trim() || 'N/A');
+  }
+
+  function cancelAttemptsModal() {
+    resolveAttemptsModal(null);
+  }
+
+  function closeAttemptsModalOnOverlay(e) {
+    if (e.target.id === 'attemptsModalOverlay') {
+      cancelAttemptsModal();
+    }
+  }
+
   async function markBucketItemBeaten(index) {
     const item = bucketItems[index];
     if (!item) return;
 
-    const attemptsRaw = prompt(`How many attempts did it take to beat "${item.levelName}"? (optional)`);
-    if (attemptsRaw === null) {
+    const attempts = await askForAttempts(item.levelName);
+    if (attempts === null) {
       // Cancelled — leave the bucket list untouched and uncheck the box
       renderBucketTable();
       return;
     }
-    const attempts = attemptsRaw.trim() || 'N/A';
 
     await addEntryToMyLog({ levelName: item.levelName, difficulty: item.difficulty, attempts });
 
@@ -1605,9 +1772,28 @@
   window.addFriend = addFriend;
   window.handleGroupSelectChange = handleGroupSelectChange;
   window.renderCombinedTable = renderCombinedTable;
+  window.handleCombinedSortChange = handleCombinedSortChange;
   window.toggleBucketPanel = toggleBucketPanel;
   window.closeBucketPanelOnOverlay = closeBucketPanelOnOverlay;
   window.addBucketItem = addBucketItem;
+  window.confirmAttemptsModal = confirmAttemptsModal;
+  window.cancelAttemptsModal = cancelAttemptsModal;
+  window.closeAttemptsModalOnOverlay = closeAttemptsModalOnOverlay;
+  window.toggleIconMenu = toggleIconMenu;
+
+  document.getElementById('attemptsModalInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') confirmAttemptsModal();
+    if (e.key === 'Escape') cancelAttemptsModal();
+  });
+
+  document.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('iconMenuDropdown');
+    const toggleBtn = document.getElementById('iconMenuToggle');
+    if (!dropdown || !toggleBtn) return;
+    if (dropdown.classList.contains('open') && !dropdown.contains(e.target) && e.target !== toggleBtn) {
+      dropdown.classList.remove('open');
+    }
+  });
 
   attachCharFilter('authUsername');
   attachCharFilter('authPassword');
