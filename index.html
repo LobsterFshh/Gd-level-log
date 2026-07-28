@@ -242,7 +242,7 @@
       overflow: hidden;
       border-radius: 22px;
       box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-      min-height: 76px;
+      min-height: 92px;
     }
     .log-row-delete-bg {
       flex: 0 0 auto;
@@ -383,6 +383,10 @@
       from { width: 100%; }
       to { width: 0%; }
     }
+    /* Extreme Demons show a smaller face + an AREDL rank note beneath it;
+       every other difficulty gets a single face sized to match that exact
+       combined footprint, so every diff cell — extreme or not — takes up
+       the identical square of space and lines up on the same x/y. */
     .diff-face-wrap {
       display: flex;
       flex-direction: column;
@@ -393,16 +397,20 @@
     }
     .diff-face {
       display: block;
-      height: 44px;
-      width: 44px;
       object-fit: contain;
+      height: 60px;
+      width: 60px;
+    }
+    .diff-face.diff-face-extreme {
+      height: 40px;
+      width: 40px;
     }
     .aredl-note {
       font-size: 11px;
       color: #9a9cb8;
       text-align: center;
-      min-height: 14px;
-      line-height: 14px;
+      height: 16px;
+      line-height: 16px;
     }
     a.showcase-link {
       color: #ff4081;
@@ -1121,8 +1129,9 @@
     }
     const isExtremeDemon = key === 'extreme demon';
     const aredlNote = `<span id="${idPrefix}-${index}" class="aredl-note">${isExtremeDemon ? 'Checking AREDL…' : ''}</span>`;
+    const faceClass = isExtremeDemon ? 'diff-face diff-face-extreme' : 'diff-face';
     return {
-      html: `<div class="diff-face-wrap"><img class="diff-face" src="${faceSrc}" alt="${difficulty}" title="${difficulty}">${aredlNote}</div>`,
+      html: `<div class="diff-face-wrap"><img class="${faceClass}" src="${faceSrc}" alt="${difficulty}" title="${difficulty}">${aredlNote}</div>`,
       isExtremeDemon
     };
   }
