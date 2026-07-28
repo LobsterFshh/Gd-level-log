@@ -208,16 +208,21 @@
 
     /* Swipeable log table (div-based so rows can be dragged horizontally) */
     .log-table {
-      background: #252636;
-      border-radius: 10px;
-      overflow: hidden;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      background: transparent;
     }
     .log-table-head {
       display: flex;
       background-color: #1f202e;
       color: #00e5ff;
       font-weight: bold;
+      border-radius: 20px;
+      margin-bottom: 8px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    .log-table-body {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
     .log-col {
       padding: 14px;
@@ -234,10 +239,8 @@
       position: relative;
       display: flex;
       overflow: hidden;
-      border-bottom: 1px solid #3d3f58;
-    }
-    .log-row-wrap:last-child {
-      border-bottom: none;
+      border-radius: 22px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
     }
     .log-row-delete-bg {
       flex: 0 0 auto;
@@ -255,7 +258,9 @@
       width: 96px;
       min-width: 96px;
       border: none;
-      background: transparent;
+      border-radius: 16px;
+      margin: 6px;
+      background: rgba(0, 0, 0, 0.12);
       color: #fff;
       font-weight: bold;
       font-size: 13px;
@@ -264,7 +269,7 @@
       transition: background 0.15s ease;
     }
     .log-delete-btn:hover {
-      background: rgba(0, 0, 0, 0.15);
+      background: rgba(0, 0, 0, 0.28);
     }
     .log-row {
       flex: 1 1 auto;
@@ -281,34 +286,40 @@
     .log-row.dragging {
       cursor: grabbing;
     }
-    .log-row-columns {
+    /* The full columns and the name-only preview sit stacked on top of each
+       other and are continuously cross-faded + slid by JS as the delete
+       button pushes in from the right, instead of hard-swapping at a
+       threshold — this is what makes the transition feel gradual. */
+    .log-row-columns,
+    .log-row-name-preview {
+      position: absolute;
+      inset: 0;
       display: flex;
       align-items: center;
-      width: 100%;
-      flex-shrink: 0;
+    }
+    .log-row-columns {
+      will-change: transform, opacity;
+    }
+    .log-row-columns.bouncy-inner,
+    .log-row-name-preview.bouncy-inner {
+      transition: transform 0.6s cubic-bezier(0.34, 1.85, 0.4, 1), opacity 0.4s ease;
     }
     .log-row-name-preview {
-      display: none;
-      align-items: center;
       gap: 10px;
-      height: 100%;
       padding: 14px;
       font-size: 17px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      opacity: 0;
+      transform: translateX(24px);
+      will-change: transform, opacity;
     }
     .log-row-preview-face {
       height: 32px;
       width: auto;
       max-width: 44px;
       flex-shrink: 0;
-    }
-    .log-row.swiping .log-row-columns {
-      display: none;
-    }
-    .log-row.swiping .log-row-name-preview {
-      display: flex;
     }
 
     /* Undo toast — pops in at the top of the page after a delete */
@@ -1310,7 +1321,7 @@
             <div class="log-col log-col-attempts">${log.attempts}</div>
             <div class="log-col log-col-showcase"><a class="showcase-link" href="${youtubeUrl}" target="_blank" rel="noopener noreferrer">YT Showcase↗</a></div>
           </div>
-          <div class="log-row-name-preview">${previewFaceImg}<strong>${log.levelName}</strong></div>
+          <div class="log-row-name-preview"><strong>${log.levelName}</strong>${previewFaceImg}</div>
         </div>
         <div class="log-row-delete-bg"><button class="log-delete-btn" type="button">🗑️ Delete</button></div>
       `;
@@ -1346,6 +1357,8 @@
     const wrap = row.closest('.log-row-wrap');
     const deleteBg = wrap.querySelector('.log-row-delete-bg');
     const deleteBtn = wrap.querySelector('.log-delete-btn');
+    const columns = wrap.querySelector('.log-row-columns');
+    const preview = wrap.querySelector('.log-row-name-preview');
     let startX = 0;
     let baseReveal = 0;
     let currentReveal = 0;
@@ -1354,10 +1367,26 @@
     let activePointerId = null;
     let isOpen = false;
 
+    // The columns get pushed left by exactly the amount the delete button
+    // has grown (so it visibly reads as "the button is shoving the row"),
+    // fading out as they go, while the name+face preview slides in and
+    // fades in at the same rate — both driven continuously off the same
+    // progress value, so nothing ever hard-snaps between the two states.
     function setReveal(px, bouncy) {
       deleteBg.classList.toggle('bouncy', bouncy);
       deleteBg.style.width = `${px}px`;
-      row.classList.toggle('swiping', px > 8);
+
+      columns.classList.toggle('bouncy-inner', bouncy);
+      preview.classList.toggle('bouncy-inner', bouncy);
+
+      const halfWidth = (rowWidth || wrap.offsetWidth) / 2 || 1;
+      const progress = Math.min(1, px / halfWidth);
+
+      columns.style.transform = `translateX(${-px}px)`;
+      columns.style.opacity = String(1 - progress);
+
+      preview.style.transform = `translateX(${24 * (1 - progress)}px)`;
+      preview.style.opacity = String(progress);
     }
 
     function close(bouncy) {
@@ -1383,6 +1412,8 @@
       currentReveal = baseReveal;
       row.classList.add('dragging');
       deleteBg.classList.remove('bouncy');
+      columns.classList.remove('bouncy-inner');
+      preview.classList.remove('bouncy-inner');
       row.setPointerCapture(e.pointerId);
     }
 
@@ -1416,8 +1447,8 @@
       e.stopPropagation();
       openSwipeRow = null;
       setReveal(rowWidth || wrap.offsetWidth, true);
-      row.style.opacity = '0';
       row.style.transition = 'opacity 0.3s ease 0.15s';
+      row.style.opacity = '0';
       deleteBg.addEventListener('transitionend', function handler(ev) {
         if (ev.propertyName !== 'width') return;
         deleteBg.removeEventListener('transitionend', handler);
